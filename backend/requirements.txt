@@ -1,0 +1,21 @@
+fastapi==0.121.1
+uvicorn[standard]==0.38.0
+pydantic==2.12.4
+pydantic-settings==2.12.0
+python-dotenv==1.2.1
+
+SQLAlchemy==2.0.35
+alembic==1.13.3
+
+# auth/crypto
+passlib[bcrypt]==1.7.4
+PyJWT==2.10.1
+cryptography==43.0.1
+
+# scheduler
+APScheduler==3.10.4
+pytz==2024.2
+
+# Netmiko stack
+netmiko==4.4.0
+paramiko==3.5.0

@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { SchedulesPage } from "@/pages/schedules";
+import { SchedulesPage } from "@/views/schedules";
 
 export default function SchedulesRoute() {
   return <SchedulesPage />;

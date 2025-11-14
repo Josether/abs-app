@@ -3,14 +3,14 @@
 import { useState, useEffect } from "react";
 import { Sidebar } from "./components/sidebar";
 import { Topbar } from "./components/topbar";
-import { LoginPage } from "./pages/login";
-import { DashboardPage } from "./pages/dashboard";
-import { DevicesPage } from "./pages/devices";
-import { UsersPage } from "./pages/users";
-import { SchedulesPage } from "./pages/schedules";
-import { JobsPage } from "./pages/jobs";
-import { BackupsPage } from "./pages/backups";
-import { AuditLogsPage } from "./pages/audit-logs";
+import { LoginPage } from "./views/login";
+import { DashboardPage } from "./views/dashboard";
+import { DevicesPage } from "./views/devices";
+import { UsersPage } from "./views/users";
+import { SchedulesPage } from "./views/schedules";
+import { JobsPage } from "./views/jobs";
+import { BackupsPage } from "./views/backups";
+import { AuditLogsPage } from "./views/audit-logs";
 import { Toaster } from "sonner";
 
 export default function App() {

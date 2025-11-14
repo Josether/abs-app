@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { AuditLogsPage } from "@/pages/audit-logs";
+import { AuditLogsPage } from "@/views/audit-logs";
 
 export default function AuditLogsRoute() {
   return <AuditLogsPage />;

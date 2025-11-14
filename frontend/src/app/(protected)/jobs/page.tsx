@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { JobsPage } from "@/pages/jobs";
+import { JobsPage } from "@/views/jobs";
 
 export default function JobsRoute() {
   return <JobsPage />;

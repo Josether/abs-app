@@ -1,8 +1,6 @@
-// frontend/src/app/page.tsx
-"use client";
-
-import App from "../App";
+// src/app/page.tsx
+import { redirect } from "next/navigation";
 
 export default function RootPage() {
-  return <App />;
+  redirect("/login");
 }

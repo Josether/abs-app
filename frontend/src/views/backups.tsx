@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -9,98 +9,99 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Eye, Download, Search } from 'lucide-react';
 import { toast } from 'sonner';
+import { apiGet, apiGetBlob, apiGetText } from '@/lib/api';
 
 interface Backup {
-  id: string;
-  device: string;
+  id: number;
+  device_id: number;
   timestamp: string;
-  size: string;
+  size_bytes: number;
   hash: string;
   status: string;
+  device_name?: string;
   content?: string;
 }
 
 export function BackupsPage() {
-  const [backups, setBackups] = useState<Backup[]>([
-    { id: '1', device: 'SW-01', timestamp: '2025-11-11 10:00', size: '14 KB', hash: 'a4c3...', status: 'success' },
-    { id: '2', device: 'SW-01', timestamp: '2025-11-11 02:00', size: '14 KB', hash: 'b9e8...', status: 'success' },
-    { id: '3', device: 'SW-02', timestamp: '2025-11-11 10:00', size: '8 KB', hash: 'c7f2...', status: 'success' },
-    { id: '4', device: 'RT-01', timestamp: '2025-11-11 02:00', size: '22 KB', hash: 'd5a1...', status: 'success' },
-    { id: '5', device: 'FW-01', timestamp: '2025-11-11 02:00', size: '156 KB', hash: 'e8b4...', status: 'success' },
-    { id: '6', device: 'SW-01', timestamp: '2025-11-10 23:00', size: '14 KB', hash: 'f3c9...', status: 'success' },
-    { id: '7', device: 'RT-01', timestamp: '2025-11-10 23:00', size: '22 KB', hash: 'g1d7...', status: 'success' },
-  ]);
+  const [backups, setBackups] = useState<Backup[]>([]);
   const [deviceFilter, setDeviceFilter] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBackup, setSelectedBackup] = useState<Backup | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const devices = ['All', ...Array.from(new Set(backups.map(b => b.device)))];
+  const fetchBackups = async () => {
+    setLoading(true);
+    try {
+      const data = await apiGet<any[]>('/backups');
+      const mapped = data.map((b) => ({
+        id: b.id,
+        device_id: b.device_id,
+        timestamp: b.timestamp,
+        size_bytes: b.size,
+        hash: b.hash,
+        status: b.status,
+        device_name: b.device_name ?? String(b.device_id),
+      })) as Backup[];
+      setBackups(mapped);
+    } catch (err) {
+      toast.error(String(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchBackups(); }, []);
+
+  const devices = ['All', ...Array.from(new Set(backups.map(b => b.device_name ?? String(b.device_id))))];
   
   const filteredBackups = backups.filter(backup => {
-    const matchesDevice = deviceFilter === 'All' || backup.device === deviceFilter;
+    const name = backup.device_name ?? String(backup.device_id);
+    const matchesDevice = deviceFilter === 'All' || name === deviceFilter;
     const matchesSearch = searchQuery === '' || 
-      backup.device.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       backup.timestamp.includes(searchQuery);
     return matchesDevice && matchesSearch;
   });
 
-  const mockBackupContent = `!
-! Last configuration change at 10:00:23 UTC Mon Nov 11 2025
-!
-version 15.2
-service timestamps debug datetime msec
-service timestamps log datetime msec
-no service password-encryption
-!
-hostname SW-01
-!
-boot-start-marker
-boot-end-marker
-!
-enable secret 5 $1$mERr$hx5rVt7rPNoS4wqbXKX7m0
-!
-no aaa new-model
-!
-ip cef
-no ipv6 cef
-!
-interface GigabitEthernet0/0
- ip address 10.2.8.1 255.255.255.0
- duplex auto
- speed auto
-!
-interface GigabitEthernet0/1
- switchport mode access
- switchport access vlan 10
-!
-ip http server
-ip http secure-server
-!
-line con 0
- logging synchronous
-line vty 0 4
- login
- transport input ssh
-!
-end`;
-
-  const handlePreview = (backup: Backup) => {
-    setSelectedBackup({ ...backup, content: mockBackupContent });
-    setIsPreviewOpen(true);
+  const formatSize = (bytes: number) => {
+    if (!bytes && bytes !== 0) return '-';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024*1024) return `${(bytes/1024).toFixed(1)} KB`;
+    return `${(bytes/(1024*1024)).toFixed(1)} MB`;
   };
 
-  const handleDownload = (backup: Backup) => {
-    const blob = new Blob([mockBackupContent], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${backup.device}_${backup.timestamp.replace(/[: ]/g, '-')}.cfg`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    toast.success('Backup file downloaded');
+  const handlePreview = async (backup: Backup) => {
+    setLoading(true);
+    try {
+      const txt = await apiGetText(`/backups/${backup.id}/download`);
+      setSelectedBackup({ ...backup, content: txt });
+      setIsPreviewOpen(true);
+    } catch (err) {
+      toast.error(String(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDownload = async (backup: Backup) => {
+    setLoading(true);
+    try {
+      const blob = await apiGetBlob(`/backups/${backup.id}/download`);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${backup.device_name ?? backup.device_id}_${backup.timestamp.replace(/[: ]/g, '-')}.cfg`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success('Backup file downloaded');
+    } catch (err) {
+      toast.error(String(err));
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -167,9 +168,9 @@ end`;
           <TableBody>
             {filteredBackups.map((backup) => (
               <TableRow key={backup.id}>
-                <TableCell>{backup.device}</TableCell>
+                <TableCell>{backup.device_name ?? String(backup.device_id)}</TableCell>
                 <TableCell>{backup.timestamp}</TableCell>
-                <TableCell>{backup.size}</TableCell>
+                <TableCell>{formatSize(backup.size_bytes)}</TableCell>
                 <TableCell>
                   <code className="text-xs bg-gray-100 px-2 py-1 rounded">{backup.hash}</code>
                 </TableCell>
@@ -211,7 +212,7 @@ end`;
         <DialogContent className="max-w-4xl max-h-[90vh]">
           <DialogHeader>
             <DialogTitle>
-              {selectedBackup?.device} - {selectedBackup?.timestamp}
+              {selectedBackup?.device_name ?? selectedBackup?.device_id} - {selectedBackup?.timestamp}
             </DialogTitle>
           </DialogHeader>
           

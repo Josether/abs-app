@@ -23,6 +23,7 @@ class Device(Base):
     password_enc: Mapped[str] = mapped_column(Text)
     secret_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
     tags: Mapped[str | None] = mapped_column(String(256))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
 class Job(Base):
     __tablename__ = "jobs"

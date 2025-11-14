@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 
 interface LoginPageProps {
-  onLogin: (username: string, role: 'admin' | 'viewer') => void;
+  onLogin: (username: string, password: string) => void;
 }
 
 export function LoginPage({ onLogin }: LoginPageProps) {
@@ -17,23 +17,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Mock authentication
-    if (username === 'admin' && password === 'admin123') {
-      toast.success('Login successful!');
-      onLogin('admin', 'admin');
-    } else if (username === 'viewer' && password === 'viewer123') {
-      toast.success('Login successful!');
-      onLogin('viewer', 'viewer');
-    } else {
-      toast.error('Invalid credentials', {
-        style: {
-          background: '#fee',
-          color: '#c00',
-          border: '1px solid #fcc',
-        },
-      });
-    }
+    onLogin(username, password);
   };
 
   return (

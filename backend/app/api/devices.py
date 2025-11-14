@@ -5,6 +5,7 @@ from ..models import Device
 from ..schemas import DeviceIn, DeviceOut, TestResult
 from ..utils.crypto import enc, dec
 from ..services.netmiko_worker import fetch_running_config
+from ..security import get_current_user, require_admin
 
 router = APIRouter(prefix="/devices", tags=["devices"])
 
@@ -14,7 +15,7 @@ def get_db():
     finally: db.close()
 
 @router.post("", response_model=DeviceOut)
-def create_device(payload: DeviceIn, db: Session = Depends(get_db)):
+def create_device(payload: DeviceIn, db: Session = Depends(get_db), current_user=Depends(require_admin)):
     dev = Device(
         hostname=payload.hostname, ip=payload.ip, vendor=payload.vendor,
         protocol=payload.protocol, port=payload.port,
@@ -24,12 +25,41 @@ def create_device(payload: DeviceIn, db: Session = Depends(get_db)):
     db.add(dev); db.commit(); db.refresh(dev)
     return DeviceOut.model_validate(dev.__dict__)
 
+
+@router.put("/{device_id}", response_model=DeviceOut)
+def update_device(device_id: int, payload: DeviceIn, db: Session = Depends(get_db), current_user=Depends(require_admin)):
+    d = db.get(Device, device_id)
+    if not d:
+        raise HTTPException(404, "Not found")
+    d.hostname = payload.hostname
+    d.ip = payload.ip
+    d.vendor = payload.vendor
+    d.protocol = payload.protocol
+    d.port = payload.port
+    if payload.username:
+        d.username_enc = enc(payload.username)
+    if payload.password:
+        d.password_enc = enc(payload.password)
+    d.secret_enc = enc(payload.secret) if payload.secret else None
+    d.tags = payload.tags
+    db.commit(); db.refresh(d)
+    return DeviceOut.model_validate(d.__dict__)
+
+
+@router.delete("/{device_id}")
+def delete_device(device_id: int, db: Session = Depends(get_db), current_user=Depends(require_admin)):
+    d = db.get(Device, device_id)
+    if not d:
+        raise HTTPException(404, "Not found")
+    db.delete(d); db.commit()
+    return {"deleted": True}
+
 @router.get("", response_model=list[DeviceOut])
-def list_devices(db: Session = Depends(get_db)):
+def list_devices(current_user=Depends(get_current_user), db: Session = Depends(get_db)):
     return [DeviceOut.model_validate(d.__dict__) for d in db.query(Device).all()]
 
 @router.post("/{device_id}/test", response_model=TestResult)
-def test_device(device_id: int, db: Session = Depends(get_db)):
+def test_device(device_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     d = db.get(Device, device_id)
     if not d: raise HTTPException(404, "Not found")
     try:

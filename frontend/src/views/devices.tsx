@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { apiGet, apiPost, apiPut, apiDelete } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -11,23 +12,29 @@ import { Plus, Search, Trash2, Edit, TestTube, CheckCircle, XCircle } from 'luci
 import { toast } from 'sonner';
 
 interface Device {
-  id: string;
+  id: number | string;
   hostname: string;
   ip: string;
   vendor: string;
   protocol: string;
-  port: string;
-  lastBackup: string;
+  port: number | string;
+  tags?: string | null;
+  lastBackup?: string;
 }
 
 export function DevicesPage() {
-  const [devices, setDevices] = useState<Device[]>([
-    { id: '1', hostname: 'SW-01', ip: '10.2.8.1', vendor: 'Cisco', protocol: 'SSH', port: '22', lastBackup: '11/10 23:00' },
-    { id: '2', hostname: 'SW-02', ip: '10.2.8.2', vendor: 'Mikrotik', protocol: 'Telnet', port: '23', lastBackup: 'Never' },
-    { id: '3', hostname: 'RT-01', ip: '10.2.8.10', vendor: 'Juniper', protocol: 'SSH', port: '22', lastBackup: '11/11 02:00' },
-    { id: '4', hostname: 'FW-01', ip: '10.2.8.254', vendor: 'Fortinet', protocol: 'SSH', port: '22', lastBackup: '11/11 02:00' },
-  ]);
+  const [devices, setDevices] = useState<Device[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  // loading indicator reserved for future UI
+  const [userRole] = useState<'admin' | 'viewer' | null>(() => {
+    try {
+      const u = typeof window !== 'undefined' ? localStorage.getItem('abs_user') : null;
+      if (u) return JSON.parse(u)?.role ?? null;
+    } catch {
+      // ignore
+    }
+    return null;
+  });
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isTestDialogOpen, setIsTestDialogOpen] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -77,7 +84,7 @@ export function DevicesPage() {
       ip: device.ip,
       vendor: device.vendor,
       protocol: device.protocol,
-      port: device.port,
+      port: String(device.port),
       username: '',
       password: '',
       secret: '',
@@ -87,49 +94,74 @@ export function DevicesPage() {
   };
 
   const handleSaveDevice = () => {
-    if (editingDevice) {
-      setDevices(devices.map(d => 
-        d.id === editingDevice.id 
-          ? { ...d, ...formData }
-          : d
-      ));
-      toast.success('Device updated successfully');
-    } else {
-      const newDevice: Device = {
-        id: Date.now().toString(),
-        hostname: formData.hostname,
-        ip: formData.ip,
-        vendor: formData.vendor,
-        protocol: formData.protocol,
-        port: formData.port,
-        lastBackup: 'Never',
-      };
-      setDevices([...devices, newDevice]);
-      toast.success('Device added successfully');
-    }
-    setIsDialogOpen(false);
+    (async () => {
+      try {
+        const payload = {
+          hostname: formData.hostname,
+          ip: formData.ip,
+          vendor: formData.vendor,
+          protocol: formData.protocol,
+          port: Number(formData.port),
+          username: formData.username,
+          password: formData.password,
+          secret: formData.secret || undefined,
+          tags: formData.tags || undefined,
+        };
+        if (editingDevice) {
+          await apiPut(`/devices/${editingDevice.id}`, payload);
+          toast.success('Device updated successfully');
+        } else {
+          await apiPost<typeof payload, unknown>(`/devices`, payload);
+          toast.success('Device added successfully');
+        }
+        await fetchDevices();
+        setIsDialogOpen(false);
+      } catch (err: unknown) {
+        const msg = (err && typeof err === 'object' && 'message' in err) ? (err as { message?: string }).message : String(err);
+        toast.error('Save failed: ' + (msg || 'unknown'));
+      }
+    })();
   };
 
   const handleDeleteDevice = (id: string) => {
-    setDevices(devices.filter(d => d.id !== id));
-    toast.success('Device deleted successfully');
+    (async () => {
+      try {
+        await apiDelete(`/devices/${id}`);
+        toast.success('Device deleted successfully');
+        await fetchDevices();
+      } catch (err: unknown) {
+        const msg = (err && typeof err === 'object' && 'message' in err) ? (err as { message?: string }).message : String(err);
+        toast.error('Delete failed: ' + (msg || 'unknown'));
+      }
+    })();
   };
 
-  const handleTestConnection = () => {
+  const handleTestConnection = async (deviceId?: number | string) => {
     setIsTestDialogOpen(true);
     setTestResult(null);
-    
-    // Simulate connection test
-    setTimeout(() => {
-      const success = Math.random() > 0.3;
-      setTestResult({
-        success,
-        message: success 
-          ? 'Connection successful! Device is reachable.' 
-          : 'Connection failed: Timeout - device is not reachable or credentials are incorrect.'
-      });
-    }, 2000);
+    try {
+      if (!deviceId && editingDevice) deviceId = editingDevice.id;
+      const res = await apiPost<unknown, { success: boolean; message: string }>(`/devices/${deviceId}/test`, {} as unknown);
+      setTestResult(res);
+    } catch (err: unknown) {
+      const msg = (err && typeof err === 'object' && 'message' in err) ? (err as { message?: string }).message : String(err);
+      setTestResult({ success: false, message: msg || 'unknown' });
+    }
   };
+
+  const fetchDevices = async () => {
+    try {
+      const rows = await apiGet<Device[]>('/devices');
+      setDevices(rows);
+    } catch (err: unknown) {
+      const msg = (err && typeof err === 'object' && 'message' in err) ? (err as { message?: string }).message : String(err);
+      toast.error('Failed loading devices: ' + (msg || 'unknown'));
+    }
+  };
+
+  useEffect(() => {
+    fetchDevices();
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -138,10 +170,12 @@ export function DevicesPage() {
           <h2 className="text-gray-900">Devices</h2>
           <p className="text-gray-500">Manage network devices for backup</p>
         </div>
-        <Button onClick={handleAddDevice} className="gap-2">
-          <Plus className="w-4 h-4" />
-          Add Device
-        </Button>
+        {userRole === 'admin' && (
+          <Button onClick={handleAddDevice} className="gap-2">
+            <Plus className="w-4 h-4" />
+            Add Device
+          </Button>
+        )}
       </div>
 
       {/* Search Box */}
@@ -180,33 +214,41 @@ export function DevicesPage() {
                 <TableCell>{device.lastBackup}</TableCell>
                 <TableCell>
                   <div className="flex gap-2">
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      onClick={() => {
-                        handleEditDevice(device);
-                        setTimeout(handleTestConnection, 100);
-                      }}
-                      title="Test Connection"
-                    >
-                      <TestTube className="w-4 h-4" />
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      onClick={() => handleEditDevice(device)}
-                      title="Edit"
-                    >
-                      <Edit className="w-4 h-4" />
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      onClick={() => handleDeleteDevice(device.id)}
-                      title="Delete"
-                    >
-                      <Trash2 className="w-4 h-4 text-red-600" />
-                    </Button>
+                    {userRole === 'admin' ? (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            handleEditDevice(device);
+                            setTimeout(() => handleTestConnection(device.id), 100);
+                          }}
+                          title="Test Connection"
+                        >
+                          <TestTube className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEditDevice(device)}
+                          title="Edit"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDeleteDevice(String(device.id))}
+                          title="Delete"
+                        >
+                          <Trash2 className="w-4 h-4 text-red-600" />
+                        </Button>
+                      </>
+                    ) : (
+                      <Button variant="outline" size="sm" onClick={() => handleTestConnection(device.id)} title="Test Connection">
+                        <TestTube className="w-4 h-4" />
+                      </Button>
+                    )}
                   </div>
                 </TableCell>
               </TableRow>
@@ -344,7 +386,7 @@ export function DevicesPage() {
             <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleTestConnection}>
+            <Button onClick={() => handleTestConnection()}>
               Test Connection
             </Button>
             <Button onClick={handleSaveDevice}>

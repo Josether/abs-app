@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -9,19 +9,18 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, Trash2, Key } from 'lucide-react';
 import { toast } from 'sonner';
+import { apiGet, apiPost, apiPut, apiDelete } from '@/lib/api';
 
 interface User {
-  id: string;
+  id: number;
   username: string;
   role: 'admin' | 'viewer';
-  createdAt: string;
+  created_at: string; // from backend
 }
 
 export function UsersPage() {
-  const [users, setUsers] = useState<User[]>([
-    { id: '1', username: 'admin', role: 'admin', createdAt: '2025-11-10' },
-    { id: '2', username: 'viewer1', role: 'viewer', createdAt: '2025-11-11' },
-  ]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(false);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -41,33 +40,40 @@ export function UsersPage() {
       return;
     }
 
-    const newUser: User = {
-      id: Date.now().toString(),
+    setLoading(true);
+    apiPost('/users', {
       username: addFormData.username,
+      password: addFormData.password,
       role: addFormData.role,
-      createdAt: new Date().toISOString().split('T')[0],
-    };
-    setUsers([...users, newUser]);
-    setIsAddDialogOpen(false);
-    setAddFormData({ username: '', password: '', role: 'viewer' });
-    toast.success('User added successfully');
+    })
+      .then(() => {
+        setIsAddDialogOpen(false);
+        setAddFormData({ username: '', password: '', role: 'viewer' });
+        toast.success('User added successfully');
+        fetchUsers();
+      })
+      .catch((err) => {
+        toast.error(String(err.message || err));
+      })
+      .finally(() => setLoading(false));
   };
 
   const handleDeleteUser = (user: User) => {
     const adminCount = users.filter(u => u.role === 'admin').length;
-    
+
     if (user.role === 'admin' && adminCount <= 1) {
-      toast.error('Cannot delete the last admin user', {
-        style: {
-          background: '#fee',
-          color: '#c00',
-        },
-      });
+      toast.error('Cannot delete the last admin user');
       return;
     }
 
-    setUsers(users.filter(u => u.id !== user.id));
-    toast.success('User deleted successfully');
+    setLoading(true);
+    apiDelete(`/users/${user.id}`)
+      .then(() => {
+        toast.success('User deleted successfully');
+        fetchUsers();
+      })
+      .catch((err) => toast.error(String(err.message || err)))
+      .finally(() => setLoading(false));
   };
 
   const handleResetPassword = () => {
@@ -81,10 +87,46 @@ export function UsersPage() {
       return;
     }
 
-    setIsResetDialogOpen(false);
-    setResetFormData({ newPassword: '', confirmPassword: '' });
-    toast.success('Password reset successfully');
+    if (!selectedUser) {
+      toast.error('No user selected');
+      return;
+    }
+
+    setLoading(true);
+    apiPut(`/users/${selectedUser.id}`, { password: resetFormData.newPassword })
+      .then(() => {
+        setIsResetDialogOpen(false);
+        setResetFormData({ newPassword: '', confirmPassword: '' });
+        toast.success('Password reset successfully');
+      })
+      .catch((err) => toast.error(String(err.message || err)))
+      .finally(() => setLoading(false));
   };
+
+  const fetchUsers = () => {
+    setLoading(true);
+    apiGet<User[]>('/users')
+      .then((data) => setUsers(data))
+      .catch((err) => toast.error(String(err.message || err)))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchUsers();
+  }, []);
+
+  const getCurrentUserRole = () => {
+    try {
+      if (typeof window === 'undefined') return 'viewer';
+      const u = localStorage.getItem('abs_user');
+      if (!u) return 'viewer';
+      return JSON.parse(u).role as 'admin' | 'viewer';
+    } catch (e) {
+      return 'viewer';
+    }
+  };
+
+  const isAdmin = getCurrentUserRole() === 'admin';
 
   return (
     <div className="space-y-6">
@@ -93,10 +135,12 @@ export function UsersPage() {
           <h2 className="text-gray-900">Users</h2>
           <p className="text-gray-500">Manage web application accounts</p>
         </div>
-        <Button onClick={() => setIsAddDialogOpen(true)} className="gap-2">
+        {isAdmin && (
+          <Button onClick={() => setIsAddDialogOpen(true)} className="gap-2">
           <Plus className="w-4 h-4" />
           Add User
-        </Button>
+          </Button>
+        )}
       </div>
 
       {/* Users Table */}
@@ -123,32 +167,38 @@ export function UsersPage() {
                     {user.role}
                   </span>
                 </TableCell>
-                <TableCell>{user.createdAt}</TableCell>
+                <TableCell>{new Date(user.created_at).toLocaleString()}</TableCell>
                 <TableCell>
                   <div className="flex gap-2">
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      onClick={() => {
-                        setSelectedUser(user);
-                        setIsResetDialogOpen(true);
-                      }}
-                      title="Reset Password"
-                      className="gap-2"
-                    >
-                      <Key className="w-4 h-4" />
-                      Reset PW
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      onClick={() => handleDeleteUser(user)}
-                      title="Delete"
-                      className="gap-2"
-                    >
-                      <Trash2 className="w-4 h-4 text-red-600" />
-                      Delete
-                    </Button>
+                    {isAdmin ? (
+                      <>
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => {
+                            setSelectedUser(user);
+                            setIsResetDialogOpen(true);
+                          }}
+                          title="Reset Password"
+                          className="gap-2"
+                        >
+                          <Key className="w-4 h-4" />
+                          Reset PW
+                        </Button>
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => handleDeleteUser(user)}
+                          title="Delete"
+                          className="gap-2"
+                        >
+                          <Trash2 className="w-4 h-4 text-red-600" />
+                          Delete
+                        </Button>
+                      </>
+                    ) : (
+                      <span className="text-sm text-gray-500">Read only</span>
+                    )}
                   </div>
                 </TableCell>
               </TableRow>

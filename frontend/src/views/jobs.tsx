@@ -8,59 +8,69 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Play, Eye, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { apiGet, apiPost } from '@/lib/api';
 
 interface Job {
-  id: string;
+  id: number;
   triggeredBy: string;
   devices: number;
   status: 'running' | 'success' | 'failed' | 'queued';
-  startedAt: string;
-  finishedAt: string;
-  progress?: { current: number; total: number };
-  logs?: string[];
+  startedAt: string | null;
+  finishedAt: string | null;
+  log?: string | null;
 }
 
+  type ApiJob = {
+    id: number;
+    triggered_by?: string;
+    triggeredBy?: string;
+    devices?: number;
+    status: string;
+    started_at?: string;
+    startedAt?: string;
+    finished_at?: string;
+    finishedAt?: string;
+    log?: string;
+  };
+
 export function JobsPage() {
-  const [jobs, setJobs] = useState<Job[]>([
-    { id: '#32', triggeredBy: 'manual', devices: 3, status: 'running', startedAt: '11/11 10:00', finishedAt: '-', progress: { current: 3, total: 10 } },
-    { id: '#31', triggeredBy: 'schedule:Weekly', devices: 15, status: 'success', startedAt: '11/08 02:00', finishedAt: '11/08 02:15' },
-    { id: '#30', triggeredBy: 'manual', devices: 5, status: 'failed', startedAt: '11/07 15:30', finishedAt: '11/07 15:45' },
-    { id: '#29', triggeredBy: 'schedule:Daily-Core', devices: 8, status: 'success', startedAt: '11/07 03:00', finishedAt: '11/07 03:12' },
-    { id: '#28', triggeredBy: 'manual', devices: 2, status: 'success', startedAt: '11/06 18:45', finishedAt: '11/06 19:05' },
-  ]);
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [loading, setLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState('All');
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
 
-  // Simulate job progress updates
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setJobs(prevJobs => prevJobs.map(job => {
-        if (job.status === 'running' && job.progress) {
-          const newCurrent = Math.min(job.progress.current + 1, job.progress.total);
-          if (newCurrent === job.progress.total) {
-            return {
-              ...job,
-              status: 'success' as const,
-              finishedAt: new Date().toLocaleString('en-US', { 
-                month: '2-digit', 
-                day: '2-digit', 
-                hour: '2-digit', 
-                minute: '2-digit',
-                hour12: false 
-              }).replace(',', ''),
-            };
-          }
-          return {
-            ...job,
-            progress: { ...job.progress, current: newCurrent }
-          };
-        }
-        return job;
+  const fetchJobs = async () => {
+    setLoading(true);
+    try {
+      const data = await apiGet<ApiJob[]>('/jobs');
+      const mapped = data.map((j) => ({
+        id: j.id,
+        triggeredBy: j.triggered_by ?? j.triggeredBy ?? '',
+        devices: j.devices ?? 0,
+        status: j.status as Job['status'],
+        startedAt: j.started_at ?? j.startedAt ?? null,
+        finishedAt: j.finished_at ?? j.finishedAt ?? null,
+        log: j.log ?? null,
       }));
-    }, 3000);
+      setJobs(mapped);
+    } catch (err) {
+      toast.error(String(err));
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    return () => clearInterval(interval);
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      if (!mounted) return;
+      await fetchJobs();
+    })();
+    const interval = setInterval(() => {
+      if (mounted) fetchJobs();
+    }, 5000);
+    return () => { mounted = false; clearInterval(interval); };
   }, []);
 
   const filteredJobs = statusFilter === 'All' 
@@ -92,40 +102,27 @@ export function JobsPage() {
     setIsDetailOpen(true);
   };
 
-  const handleCancelJob = (jobId: string) => {
-    setJobs(jobs.map(job => 
-      job.id === jobId && job.status === 'running'
-        ? { ...job, status: 'failed' as const, finishedAt: 'Cancelled' }
-        : job
-    ));
-    setIsDetailOpen(false);
-    toast.success('Job cancelled successfully');
+  const handleCancelJob = (jobId: number) => {
+    setLoading(true);
+    apiPost(`/jobs/${jobId}/cancel`, {})
+      .then(() => {
+        toast.success('Job cancelled successfully');
+        fetchJobs();
+        setIsDetailOpen(false);
+      })
+      .catch((err) => toast.error(String(err.message || err)))
+      .finally(() => setLoading(false));
   };
 
   const handleRunManual = () => {
-    const hasRunning = jobs.some(job => job.status === 'running');
-    const newJob: Job = {
-      id: `#${parseInt(jobs[0].id.substring(1)) + 1}`,
-      triggeredBy: 'manual',
-      devices: 10,
-      status: hasRunning ? 'queued' : 'running',
-      startedAt: new Date().toLocaleString('en-US', { 
-        month: '2-digit', 
-        day: '2-digit', 
-        hour: '2-digit', 
-        minute: '2-digit',
-        hour12: false 
-      }).replace(',', ''),
-      finishedAt: '-',
-      progress: { current: 0, total: 10 },
-    };
-    setJobs([newJob, ...jobs]);
-    
-    if (hasRunning) {
-      toast.info('Job queued. Will start after current job completes.');
-    } else {
-      toast.success('Manual backup job started');
-    }
+    setLoading(true);
+    apiPost('/jobs/run/manual', {})
+      .then(() => {
+        toast.success('Manual backup job queued');
+        fetchJobs();
+      })
+      .catch((err) => toast.error(String(err.message || err)))
+      .finally(() => setLoading(false));
   };
 
   const mockLogs = [
@@ -144,7 +141,7 @@ export function JobsPage() {
           <h2 className="text-gray-900">Jobs</h2>
           <p className="text-gray-500">Backup job history and status</p>
         </div>
-        <Button onClick={handleRunManual} className="gap-2">
+        <Button onClick={handleRunManual} className="gap-2" disabled={loading}>
           <Play className="w-4 h-4" />
           Run Manual Backup
         </Button>
@@ -193,12 +190,12 @@ export function JobsPage() {
           <TableBody>
             {filteredJobs.map((job) => (
               <TableRow key={job.id}>
-                <TableCell>{job.id}</TableCell>
+                <TableCell>{`#${job.id}`}</TableCell>
                 <TableCell>{job.triggeredBy}</TableCell>
                 <TableCell>{job.devices}</TableCell>
                 <TableCell>{getStatusBadge(job.status)}</TableCell>
-                <TableCell>{job.startedAt}</TableCell>
-                <TableCell>{job.finishedAt}</TableCell>
+                <TableCell>{job.startedAt ? new Date(job.startedAt).toLocaleString() : '-'}</TableCell>
+                <TableCell>{job.finishedAt ? new Date(job.finishedAt).toLocaleString() : '-'}</TableCell>
                 <TableCell>
                   <div className="flex gap-2">
                     <Button 
@@ -236,31 +233,13 @@ export function JobsPage() {
           
           {selectedJob && (
             <div className="space-y-4 py-4">
-              {selectedJob.status === 'running' && selectedJob.progress && (
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm">Progress</span>
-                    <span className="text-sm">{selectedJob.progress.current}/{selectedJob.progress.total}</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-4">
-                    <div 
-                      className="bg-blue-600 h-4 rounded-full transition-all duration-500"
-                      style={{ width: `${(selectedJob.progress.current / selectedJob.progress.total) * 100}%` }}
-                    ></div>
-                  </div>
-                  <p className="text-sm text-gray-600 mt-2">
-                    Queue State: 0 waiting
-                  </p>
-                </div>
-              )}
-
               <div>
                 <h4 className="text-gray-900 mb-2">Details</h4>
                 <div className="space-y-1 text-sm">
                   <p><span className="text-gray-600">Triggered by:</span> {selectedJob.triggeredBy}</p>
                   <p><span className="text-gray-600">Devices:</span> {selectedJob.devices}</p>
-                  <p><span className="text-gray-600">Started:</span> {selectedJob.startedAt}</p>
-                  <p><span className="text-gray-600">Finished:</span> {selectedJob.finishedAt}</p>
+                  <p><span className="text-gray-600">Started:</span> {selectedJob.startedAt ? new Date(selectedJob.startedAt).toLocaleString() : '-'}</p>
+                  <p><span className="text-gray-600">Finished:</span> {selectedJob.finishedAt ? new Date(selectedJob.finishedAt).toLocaleString() : '-'}</p>
                 </div>
               </div>
 

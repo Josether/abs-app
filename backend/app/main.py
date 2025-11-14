@@ -4,6 +4,7 @@ from .settings import settings
 from .database import Base, engine
 from .api import auth, devices, jobs, backups  # + users, schedules, audit (nanti)
 from .services import scheduler
+from .routers import users as users_router, schedules as schedules_router, audit as audit_router, auth as auth_router
 
 Base.metadata.create_all(bind=engine)
 
@@ -20,6 +21,10 @@ def health(): return {"status":"ok"}
 app.include_router(devices.router)
 app.include_router(jobs.router)
 app.include_router(backups.router)
+app.include_router(users_router.router)
+app.include_router(schedules_router.router)
+app.include_router(audit_router.router)
+app.include_router(auth_router.router)
 
 @app.on_event("startup")
 async def on_startup():

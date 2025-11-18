@@ -29,23 +29,29 @@ export function BackupsPage() {
   const [selectedBackup, setSelectedBackup] = useState<Backup | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [previewingId, setPreviewingId] = useState<number | null>(null);
+  const [downloadingId, setDownloadingId] = useState<number | null>(null);
 
   const fetchBackups = async () => {
     setLoading(true);
     try {
-      const data = await apiGet<any[]>('/backups');
-      const mapped = data.map((b) => ({
-        id: b.id,
-        device_id: b.device_id,
-        timestamp: b.timestamp,
-        size_bytes: b.size,
-        hash: b.hash,
-        status: b.status,
-        device_name: b.device_name ?? String(b.device_id),
-      })) as Backup[];
+      const data = await apiGet<unknown[]>('/backups');
+      const mapped = data.map((b: unknown) => {
+        const backup = b as { id: number; device_id: number; timestamp: string; size: number; hash: string; status: string; device_name?: string };
+        return {
+          id: backup.id,
+          device_id: backup.device_id,
+          timestamp: backup.timestamp,
+          size_bytes: backup.size,
+          hash: backup.hash,
+          status: backup.status,
+          device_name: backup.device_name ?? String(backup.device_id),
+        };
+      }) as Backup[];
       setBackups(mapped);
-    } catch (err) {
-      toast.error(String(err));
+    } catch (err: unknown) {
+      const msg = (err && typeof err === 'object' && 'message' in err) ? (err as { message?: string }).message : String(err);
+      toast.error('Failed to load backups: ' + (msg || 'Unknown error'));
     } finally {
       setLoading(false);
     }
@@ -72,20 +78,21 @@ export function BackupsPage() {
   };
 
   const handlePreview = async (backup: Backup) => {
-    setLoading(true);
+    setPreviewingId(backup.id);
     try {
       const txt = await apiGetText(`/backups/${backup.id}/download`);
       setSelectedBackup({ ...backup, content: txt });
       setIsPreviewOpen(true);
-    } catch (err) {
-      toast.error(String(err));
+    } catch (err: unknown) {
+      const msg = (err && typeof err === 'object' && 'message' in err) ? (err as { message?: string }).message : String(err);
+      toast.error('Failed to load backup preview: ' + (msg || 'Unknown error'));
     } finally {
-      setLoading(false);
+      setPreviewingId(null);
     }
   };
 
   const handleDownload = async (backup: Backup) => {
-    setLoading(true);
+    setDownloadingId(backup.id);
     try {
       const blob = await apiGetBlob(`/backups/${backup.id}/download`);
       const url = URL.createObjectURL(blob);
@@ -96,11 +103,12 @@ export function BackupsPage() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      toast.success('Backup file downloaded');
-    } catch (err) {
-      toast.error(String(err));
+      toast.success('Backup file downloaded successfully');
+    } catch (err: unknown) {
+      const msg = (err && typeof err === 'object' && 'message' in err) ? (err as { message?: string }).message : String(err);
+      toast.error('Failed to download backup: ' + (msg || 'Unknown error'));
     } finally {
-      setLoading(false);
+      setDownloadingId(null);
     }
   };
 
@@ -154,6 +162,18 @@ export function BackupsPage() {
 
       {/* Backups Table */}
       <div className="border rounded-lg bg-white">
+        {loading && backups.length === 0 ? (
+          <div className="flex items-center justify-center py-12">
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-8 h-8 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+              <p className="text-gray-500">Loading backups...</p>
+            </div>
+          </div>
+        ) : filteredBackups.length === 0 ? (
+          <div className="flex items-center justify-center py-12">
+            <p className="text-gray-500">No backups found</p>
+          </div>
+        ) : (
         <Table>
           <TableHeader>
             <TableRow>
@@ -185,9 +205,14 @@ export function BackupsPage() {
                       onClick={() => handlePreview(backup)}
                       title="Preview"
                       className="gap-1"
+                      disabled={previewingId === backup.id || downloadingId === backup.id}
                     >
-                      <Eye className="w-4 h-4" />
-                      Preview
+                      {previewingId === backup.id ? (
+                        <div className="w-4 h-4 border-2 border-gray-400 border-t-gray-600 rounded-full animate-spin"></div>
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                      {previewingId === backup.id ? 'Loading...' : 'Preview'}
                     </Button>
                     <Button 
                       variant="outline" 
@@ -195,9 +220,14 @@ export function BackupsPage() {
                       onClick={() => handleDownload(backup)}
                       title="Download"
                       className="gap-1"
+                      disabled={previewingId === backup.id || downloadingId === backup.id}
                     >
-                      <Download className="w-4 h-4" />
-                      Download
+                      {downloadingId === backup.id ? (
+                        <div className="w-4 h-4 border-2 border-gray-400 border-t-gray-600 rounded-full animate-spin"></div>
+                      ) : (
+                        <Download className="w-4 h-4" />
+                      )}
+                      {downloadingId === backup.id ? 'Downloading...' : 'Download'}
                     </Button>
                   </div>
                 </TableCell>
@@ -205,6 +235,7 @@ export function BackupsPage() {
             ))}
           </TableBody>
         </Table>
+        )}
       </div>
 
       {/* Preview Modal */}
@@ -227,9 +258,19 @@ export function BackupsPage() {
               variant="outline"
               onClick={() => selectedBackup && handleDownload(selectedBackup)}
               className="gap-2"
+              disabled={downloadingId === selectedBackup?.id}
             >
-              <Download className="w-4 h-4" />
-              Download
+              {downloadingId === selectedBackup?.id ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-gray-400 border-t-gray-600 rounded-full animate-spin"></div>
+                  Downloading...
+                </>
+              ) : (
+                <>
+                  <Download className="w-4 h-4" />
+                  Download
+                </>
+              )}
             </Button>
             <Button onClick={() => setIsPreviewOpen(false)}>
               Close

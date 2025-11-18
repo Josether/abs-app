@@ -36,9 +36,24 @@ interface Job {
 export function JobsPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(false);
+  const [runningManual, setRunningManual] = useState(false);
+  const [cancellingId, setCancellingId] = useState<number | null>(null);
   const [statusFilter, setStatusFilter] = useState('All');
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [jobLog, setJobLog] = useState<string[]>([]);
+  const [loadingLog, setLoadingLog] = useState(false);
+
+  const [userRole] = useState<'admin' | 'viewer'>(() => {
+    try {
+      if (typeof window === 'undefined') return 'viewer';
+      const u = localStorage.getItem('abs_user');
+      if (!u) return 'viewer';
+      return JSON.parse(u).role as 'admin' | 'viewer';
+    } catch {
+      return 'viewer';
+    }
+  });
 
   const fetchJobs = async () => {
     setLoading(true);
@@ -54,8 +69,9 @@ export function JobsPage() {
         log: j.log ?? null,
       }));
       setJobs(mapped);
-    } catch (err) {
-      toast.error(String(err));
+    } catch (err: unknown) {
+      const msg = (err && typeof err === 'object' && 'message' in err) ? (err as { message?: string }).message : String(err);
+      toast.error('Failed to load jobs: ' + (msg || 'Unknown error'));
     } finally {
       setLoading(false);
     }
@@ -97,42 +113,75 @@ export function JobsPage() {
     );
   };
 
-  const handleViewJob = (job: Job) => {
+  const handleViewJob = async (job: Job) => {
     setSelectedJob(job);
     setIsDetailOpen(true);
+    setLoadingLog(true);
+    setJobLog([]);
+    
+    try {
+      const jobDetail = await apiGet<{
+        id: number;
+        triggered_by: string;
+        status: string;
+        started_at: string | null;
+        finished_at: string | null;
+        devices_count: number;
+        log: string;
+      }>(`/jobs/${job.id}`);
+      
+      const logLines = jobDetail.log ? jobDetail.log.split('\n').filter(line => line.trim()) : [];
+      setJobLog(logLines);
+      
+      // Update selected job with fresh data
+      setSelectedJob({
+        ...job,
+        triggeredBy: jobDetail.triggered_by,
+        devices: jobDetail.devices_count,
+        status: jobDetail.status as Job['status'],
+        startedAt: jobDetail.started_at,
+        finishedAt: jobDetail.finished_at,
+        log: jobDetail.log,
+      });
+    } catch (err) {
+      toast.error(`Failed to fetch job details: ${err}`);
+    } finally {
+      setLoadingLog(false);
+    }
   };
 
-  const handleCancelJob = (jobId: number) => {
-    setLoading(true);
-    apiPost(`/jobs/${jobId}/cancel`, {})
-      .then(() => {
-        toast.success('Job cancelled successfully');
-        fetchJobs();
-        setIsDetailOpen(false);
-      })
-      .catch((err) => toast.error(String(err.message || err)))
-      .finally(() => setLoading(false));
+  const handleCancelJob = async (jobId: number) => {
+    if (!confirm('Are you sure you want to cancel this job?')) {
+      return;
+    }
+
+    setCancellingId(jobId);
+    try {
+      await apiPost(`/jobs/${jobId}/cancel`, {});
+      toast.success('Job cancelled successfully');
+      await fetchJobs();
+      setIsDetailOpen(false);
+    } catch (err: unknown) {
+      const msg = (err && typeof err === 'object' && 'message' in err) ? (err as { message?: string }).message : String(err);
+      toast.error('Failed to cancel job: ' + (msg || 'Unknown error'));
+    } finally {
+      setCancellingId(null);
+    }
   };
 
-  const handleRunManual = () => {
-    setLoading(true);
-    apiPost('/jobs/run/manual', {})
-      .then(() => {
-        toast.success('Manual backup job queued');
-        fetchJobs();
-      })
-      .catch((err) => toast.error(String(err.message || err)))
-      .finally(() => setLoading(false));
+  const handleRunManual = async () => {
+    setRunningManual(true);
+    try {
+      await apiPost('/jobs/run/manual', {});
+      toast.success('Manual backup job queued successfully');
+      await fetchJobs();
+    } catch (err: unknown) {
+      const msg = (err && typeof err === 'object' && 'message' in err) ? (err as { message?: string }).message : String(err);
+      toast.error('Failed to start backup job: ' + (msg || 'Unknown error'));
+    } finally {
+      setRunningManual(false);
+    }
   };
-
-  const mockLogs = [
-    '[SW-01] Connecting... done.',
-    '[SW-01] Backup success (12.3 KB, 45s)',
-    '[SW-02] Connecting... done.',
-    '[SW-02] Backup success (8.7 KB, 32s)',
-    '[SW-03] Connecting... timeout.',
-    '[SW-03] Retry attempt 1/3...',
-  ];
 
   return (
     <div className="space-y-6">
@@ -141,10 +190,21 @@ export function JobsPage() {
           <h2 className="text-gray-900">Jobs</h2>
           <p className="text-gray-500">Backup job history and status</p>
         </div>
-        <Button onClick={handleRunManual} className="gap-2" disabled={loading}>
-          <Play className="w-4 h-4" />
-          Run Manual Backup
-        </Button>
+        {userRole === 'admin' && (
+          <Button onClick={handleRunManual} className="gap-2" disabled={runningManual || loading}>
+            {runningManual ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                Starting...
+              </>
+            ) : (
+              <>
+                <Play className="w-4 h-4" />
+                Run Manual Backup
+              </>
+            )}
+          </Button>
+        )}
       </div>
 
       {/* Status Filter */}
@@ -206,14 +266,19 @@ export function JobsPage() {
                     >
                       <Eye className="w-4 h-4" />
                     </Button>
-                    {job.status === 'running' && (
+                    {job.status === 'running' && userRole === 'admin' && (
                       <Button 
                         variant="outline" 
                         size="sm"
                         onClick={() => handleCancelJob(job.id)}
                         title="Cancel Job"
+                        disabled={cancellingId === job.id}
                       >
-                        <X className="w-4 h-4 text-red-600" />
+                        {cancellingId === job.id ? (
+                          <div className="w-4 h-4 border-2 border-red-200 border-t-red-600 rounded-full animate-spin"></div>
+                        ) : (
+                          <X className="w-4 h-4 text-red-600" />
+                        )}
                       </Button>
                     )}
                   </div>
@@ -246,11 +311,17 @@ export function JobsPage() {
               <div>
                 <h4 className="text-gray-900 mb-2">Logs</h4>
                 <div className="bg-gray-900 text-green-400 p-4 rounded-lg h-64 overflow-auto font-mono text-sm">
-                  {mockLogs.map((log, index) => (
-                    <div key={index}>{log}</div>
-                  ))}
-                  {selectedJob.status === 'running' && (
-                    <div className="animate-pulse">Processing...</div>
+                  {loadingLog ? (
+                    <div className="text-yellow-400 animate-pulse">Loading logs...</div>
+                  ) : jobLog.length > 0 ? (
+                    jobLog.map((log, index) => (
+                      <div key={index}>{log}</div>
+                    ))
+                  ) : (
+                    <div className="text-gray-500">No logs available yet</div>
+                  )}
+                  {selectedJob.status === 'running' && jobLog.length > 0 && (
+                    <div className="animate-pulse mt-2">Processing...</div>
                   )}
                 </div>
               </div>
@@ -258,12 +329,20 @@ export function JobsPage() {
           )}
 
           <DialogFooter>
-            {selectedJob?.status === 'running' && (
+            {selectedJob?.status === 'running' && userRole === 'admin' && (
               <Button 
                 variant="destructive" 
                 onClick={() => selectedJob && handleCancelJob(selectedJob.id)}
+                disabled={cancellingId === selectedJob.id}
               >
-                Cancel Job
+                {cancellingId === selectedJob.id ? (
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    Cancelling...
+                  </div>
+                ) : (
+                  'Cancel Job'
+                )}
               </Button>
             )}
             <Button variant="outline" onClick={() => setIsDetailOpen(false)}>

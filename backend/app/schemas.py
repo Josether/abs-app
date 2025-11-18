@@ -13,6 +13,7 @@ class DeviceIn(BaseModel):
     password: str
     secret: Optional[str] = None
     tags: Optional[str] = None
+    enabled: Optional[bool] = None
 
 
 class DeviceOut(BaseModel):

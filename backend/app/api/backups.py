@@ -5,6 +5,7 @@ from ..database import SessionLocal
 from ..models import Backup, Device
 from pathlib import Path
 from ..security import get_current_user, require_admin
+from ..services.audit_log import audit_event
 
 router = APIRouter(prefix="/backups", tags=["backups"])
 def get_db(): 
@@ -35,4 +36,7 @@ def download_backup(backup_id: int, db: Session = Depends(get_db), current_user=
     b = db.get(Backup, backup_id)
     if not b or not Path(b.path).exists():
         raise HTTPException(404, "Not found")
+    dev = db.get(Device, b.device_id)
+    device_name = dev.hostname if dev else str(b.device_id)
+    audit_event(user=current_user.username, action="backup_download", target=f"{device_name} ({b.timestamp.strftime('%Y-%m-%d %H:%M')})", result="success")
     return FileResponse(b.path, filename=Path(b.path).name, media_type="text/plain")

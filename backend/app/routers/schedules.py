@@ -5,6 +5,8 @@ from ..models import Schedule
 from ..schemas import ScheduleIn, ScheduleOut
 import time
 from ..security import get_current_user, require_admin
+from ..services.audit_log import audit_event
+from ..services import scheduler as sched_service
 
 router = APIRouter(prefix="/schedules", tags=["schedules"])
 
@@ -54,6 +56,9 @@ def create_schedule(payload: ScheduleIn, db: Session = Depends(get_db), current_
     db.add(s)
     db.commit()
     db.refresh(s)
+    audit_event(user=current_user.username, action="schedule_create", target=s.name, result="success")
+    # Reload scheduler to pick up new schedule
+    sched_service.reload_schedules()
     return ScheduleOut(
         id=s.id, name=s.name, run_at=s.run_at, enabled=bool(s.enabled),
         interval_days=s.interval_days, target_type=s.target_type,
@@ -75,6 +80,9 @@ def update_schedule(schedule_id: int, payload: ScheduleIn, db: Session = Depends
         s.target_type = "Device"
     db.commit()
     db.refresh(s)
+    audit_event(user=current_user.username, action="schedule_update", target=s.name, result="success")
+    # Reload scheduler to pick up changes
+    sched_service.reload_schedules()
     return ScheduleOut(
         id=s.id, name=s.name, run_at=s.run_at, enabled=bool(s.enabled),
         interval_days=s.interval_days, target_type=s.target_type,
@@ -87,6 +95,10 @@ def delete_schedule(schedule_id: int, db: Session = Depends(get_db), current_use
     s = db.get(Schedule, schedule_id)
     if not s:
         raise HTTPException(status_code=404, detail="not found")
+    schedule_name = s.name
     db.delete(s)
     db.commit()
+    audit_event(user=current_user.username, action="schedule_delete", target=schedule_name, result="success")
+    # Reload scheduler to remove deleted schedule
+    sched_service.reload_schedules()
     return {"deleted": True}

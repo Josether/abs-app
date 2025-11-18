@@ -5,6 +5,7 @@ from ..models import User
 from ..security import verify_password, create_access_token, get_current_user
 from ..settings import settings
 from datetime import timedelta
+from ..services.audit_log import audit_event
 
 
 class TokenRequest(BaseModel):
@@ -28,9 +29,11 @@ def login_for_access_token(payload: TokenRequest):
     try:
         user = db.query(User).filter_by(username=payload.username).first()
         if not user or not verify_password(payload.password, user.password_hash):
+            audit_event(user=payload.username, action="auth_login", target="-", result="failed")
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
         access_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         token = create_access_token({"sub": user.username, "role": user.role}, expires_delta=access_expires)
+        audit_event(user=user.username, action="auth_login", target="-", result="success")
         return TokenResponse(access_token=token, username=user.username, role=user.role)
     finally:
         db.close()

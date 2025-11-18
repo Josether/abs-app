@@ -6,6 +6,7 @@ from ..schemas import DeviceIn, DeviceOut, TestResult
 from ..utils.crypto import enc, dec
 from ..services.netmiko_worker import fetch_running_config
 from ..security import get_current_user, require_admin
+from ..services.audit_log import audit_event
 
 router = APIRouter(prefix="/devices", tags=["devices"])
 
@@ -23,6 +24,7 @@ def create_device(payload: DeviceIn, db: Session = Depends(get_db), current_user
         secret_enc=enc(payload.secret) if payload.secret else None, tags=payload.tags
     )
     db.add(dev); db.commit(); db.refresh(dev)
+    audit_event(user=current_user.username, action="device_create", target=dev.hostname, result="success")
     return DeviceOut.model_validate(dev.__dict__)
 
 
@@ -31,6 +33,7 @@ def update_device(device_id: int, payload: DeviceIn, db: Session = Depends(get_d
     d = db.get(Device, device_id)
     if not d:
         raise HTTPException(404, "Not found")
+    old_hostname = d.hostname
     d.hostname = payload.hostname
     d.ip = payload.ip
     d.vendor = payload.vendor
@@ -42,7 +45,10 @@ def update_device(device_id: int, payload: DeviceIn, db: Session = Depends(get_d
         d.password_enc = enc(payload.password)
     d.secret_enc = enc(payload.secret) if payload.secret else None
     d.tags = payload.tags
+    if payload.enabled is not None:
+        d.enabled = payload.enabled
     db.commit(); db.refresh(d)
+    audit_event(user=current_user.username, action="device_update", target=old_hostname, result="success")
     return DeviceOut.model_validate(d.__dict__)
 
 
@@ -51,7 +57,9 @@ def delete_device(device_id: int, db: Session = Depends(get_db), current_user=De
     d = db.get(Device, device_id)
     if not d:
         raise HTTPException(404, "Not found")
+    hostname = d.hostname
     db.delete(d); db.commit()
+    audit_event(user=current_user.username, action="device_delete", target=hostname, result="success")
     return {"deleted": True}
 
 @router.get("", response_model=list[DeviceOut])
@@ -68,6 +76,8 @@ def test_device(device_id: int, db: Session = Depends(get_db), current_user=Depe
             password=dec(d.password_enc), secret=dec(d.secret_enc) if d.secret_enc else None,
             protocol=d.protocol, port=d.port, cmd="show version"
         )
+        audit_event(user=current_user.username, action="device_test", target=d.hostname, result="success")
         return TestResult(success=True, message="OK")
     except Exception as e:
+        audit_event(user=current_user.username, action="device_test", target=d.hostname, result=f"failed: {str(e)}")
         return TestResult(success=False, message=f"Failed: {e}")

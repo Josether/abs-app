@@ -3,9 +3,21 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { HardDrive, CheckCircle, XCircle, Calendar } from "lucide-react";
+import { HardDrive, CheckCircle, XCircle, Calendar, AlertCircle } from "lucide-react";
+import { useState } from "react";
 
 export function DashboardPage() {
+  const [userRole] = useState<'admin' | 'viewer'>(() => {
+    try {
+      if (typeof window === 'undefined') return 'viewer';
+      const u = localStorage.getItem('abs_user');
+      if (!u) return 'viewer';
+      return JSON.parse(u).role as 'admin' | 'viewer';
+    } catch {
+      return 'viewer';
+    }
+  });
+
   const stats = [
     { label: 'Total Devices', value: '15', icon: HardDrive, color: 'text-blue-600', bgColor: 'bg-blue-100' },
     { label: 'Successful Backups (7 days)', value: '98', icon: CheckCircle, color: 'text-green-600', bgColor: 'bg-green-100' },
@@ -36,6 +48,19 @@ export function DashboardPage() {
         <h2 className="text-gray-900">Dashboard</h2>
         <p className="text-gray-500">Overview of your backup system</p>
       </div>
+
+      {/* Viewer Info Banner */}
+      {userRole === 'viewer' && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5" />
+          <div>
+            <p className="text-blue-800 font-medium">Viewing in read-only mode</p>
+            <p className="text-blue-700 text-sm mt-1">
+              You are logged in as a viewer. Some features like adding/editing devices, users, and schedules are restricted to admin users.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

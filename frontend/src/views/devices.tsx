@@ -8,6 +8,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { Plus, Search, Trash2, Edit, TestTube, CheckCircle, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -20,12 +22,17 @@ interface Device {
   port: number | string;
   tags?: string | null;
   lastBackup?: string;
+  enabled?: boolean;
 }
 
 export function DevicesPage() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  // loading indicator reserved for future UI
+  const [loading, setLoading] = useState(false);
+  const [savingDevice, setSavingDevice] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [togglingId, setTogglingId] = useState<string | number | null>(null);
   const [userRole] = useState<'admin' | 'viewer' | null>(() => {
     try {
       const u = typeof window !== 'undefined' ? localStorage.getItem('abs_user') : null;
@@ -52,8 +59,33 @@ export function DevicesPage() {
   });
 
   const vendors = [
-    'Cisco', 'Mikrotik', 'Juniper', 'Fortinet', 'HP/Aruba', 
-    'Huawei', 'Dell', 'Arista', 'Extreme', 'Ubiquiti'
+    // Cisco devices
+    'Cisco (IOS Router/Switch)',
+    'Cisco (ASA Firewall)',
+    'Cisco (NXOS Data Center)',
+    'Cisco (WLC Controller)',
+    
+    // Allied Telesis
+    'Allied Telesis (AWPlus)',
+    
+    // Aruba devices
+    'Aruba (AOS-CX Switch)',
+    'Aruba (AOS AP/Controller)',
+    
+    // MikroTik devices
+    'MikroTik (RouterOS)',
+    'MikroTik (SwitchOS)',
+    
+    // Huawei devices
+    'Huawei (Switch/AP)',
+    'Huawei (OLT)',
+    'Huawei (SmartAX)',
+    
+    // Fortinet devices
+    'Fortinet (FortiGate)',
+    
+    // Juniper devices
+    'Juniper (JunOS)',
   ];
 
   const filteredDevices = devices.filter(device => 
@@ -66,7 +98,7 @@ export function DevicesPage() {
     setFormData({
       hostname: '',
       ip: '',
-      vendor: 'Cisco',
+      vendor: 'Cisco (IOS Router/Switch)',
       protocol: 'SSH',
       port: '22',
       username: '',
@@ -93,69 +125,115 @@ export function DevicesPage() {
     setIsDialogOpen(true);
   };
 
-  const handleSaveDevice = () => {
-    (async () => {
-      try {
-        const payload = {
-          hostname: formData.hostname,
-          ip: formData.ip,
-          vendor: formData.vendor,
-          protocol: formData.protocol,
-          port: Number(formData.port),
-          username: formData.username,
-          password: formData.password,
-          secret: formData.secret || undefined,
-          tags: formData.tags || undefined,
-        };
-        if (editingDevice) {
-          await apiPut(`/devices/${editingDevice.id}`, payload);
-          toast.success('Device updated successfully');
-        } else {
-          await apiPost<typeof payload, unknown>(`/devices`, payload);
-          toast.success('Device added successfully');
-        }
-        await fetchDevices();
-        setIsDialogOpen(false);
-      } catch (err: unknown) {
-        const msg = (err && typeof err === 'object' && 'message' in err) ? (err as { message?: string }).message : String(err);
-        toast.error('Save failed: ' + (msg || 'unknown'));
+  const handleSaveDevice = async () => {
+    if (!formData.hostname || !formData.ip || !formData.username || !formData.password) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+
+    setSavingDevice(true);
+    try {
+      const payload = {
+        hostname: formData.hostname,
+        ip: formData.ip,
+        vendor: formData.vendor,
+        protocol: formData.protocol,
+        port: Number(formData.port),
+        username: formData.username,
+        password: formData.password,
+        secret: formData.secret || undefined,
+        tags: formData.tags || undefined,
+      };
+      if (editingDevice) {
+        await apiPut(`/devices/${editingDevice.id}`, payload);
+        toast.success('Device updated successfully');
+      } else {
+        await apiPost<typeof payload, unknown>(`/devices`, payload);
+        toast.success('Device added successfully');
       }
-    })();
+      await fetchDevices();
+      setIsDialogOpen(false);
+    } catch (err: unknown) {
+      const msg = (err && typeof err === 'object' && 'message' in err) ? (err as { message?: string }).message : String(err);
+      toast.error('Failed to save device: ' + (msg || 'Unknown error'));
+    } finally {
+      setSavingDevice(false);
+    }
   };
 
-  const handleDeleteDevice = (id: string) => {
-    (async () => {
-      try {
-        await apiDelete(`/devices/${id}`);
-        toast.success('Device deleted successfully');
-        await fetchDevices();
-      } catch (err: unknown) {
-        const msg = (err && typeof err === 'object' && 'message' in err) ? (err as { message?: string }).message : String(err);
-        toast.error('Delete failed: ' + (msg || 'unknown'));
-      }
-    })();
+  const handleDeleteDevice = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this device?')) {
+      return;
+    }
+
+    setDeletingId(id);
+    try {
+      await apiDelete(`/devices/${id}`);
+      toast.success('Device deleted successfully');
+      await fetchDevices();
+    } catch (err: unknown) {
+      const msg = (err && typeof err === 'object' && 'message' in err) ? (err as { message?: string }).message : String(err);
+      toast.error('Failed to delete device: ' + (msg || 'Unknown error'));
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleToggleEnabled = async (device: Device) => {
+    setTogglingId(device.id);
+    try {
+      const newEnabledState = !device.enabled;
+      // Update device with only the enabled field changed
+      await apiPut(`/devices/${device.id}`, {
+        hostname: device.hostname,
+        ip: device.ip,
+        vendor: device.vendor,
+        protocol: device.protocol,
+        port: Number(device.port),
+        username: '', // backend should ignore empty username/password on update
+        password: '',
+        tags: device.tags || undefined,
+        enabled: newEnabledState,
+      });
+      // Update local state
+      setDevices(prev => prev.map(d => 
+        d.id === device.id ? { ...d, enabled: newEnabledState } : d
+      ));
+      toast.success(`Device ${newEnabledState ? 'enabled' : 'disabled'} successfully`);
+    } catch (err: unknown) {
+      const msg = (err && typeof err === 'object' && 'message' in err) ? (err as { message?: string }).message : String(err);
+      toast.error('Failed to toggle device: ' + (msg || 'Unknown error'));
+    } finally {
+      setTogglingId(null);
+    }
   };
 
   const handleTestConnection = async (deviceId?: number | string) => {
     setIsTestDialogOpen(true);
     setTestResult(null);
+    setTestingConnection(true);
     try {
       if (!deviceId && editingDevice) deviceId = editingDevice.id;
       const res = await apiPost<unknown, { success: boolean; message: string }>(`/devices/${deviceId}/test`, {} as unknown);
       setTestResult(res);
     } catch (err: unknown) {
       const msg = (err && typeof err === 'object' && 'message' in err) ? (err as { message?: string }).message : String(err);
-      setTestResult({ success: false, message: msg || 'unknown' });
+      setTestResult({ success: false, message: msg || 'Connection test failed' });
+    } finally {
+      setTestingConnection(false);
     }
   };
 
   const fetchDevices = async () => {
+    setLoading(true);
     try {
       const rows = await apiGet<Device[]>('/devices');
       setDevices(rows);
     } catch (err: unknown) {
       const msg = (err && typeof err === 'object' && 'message' in err) ? (err as { message?: string }).message : String(err);
-      toast.error('Failed loading devices: ' + (msg || 'unknown'));
+      toast.error('Failed to load devices: ' + (msg || 'Unknown error'));
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -171,7 +249,7 @@ export function DevicesPage() {
           <p className="text-gray-500">Manage network devices for backup</p>
         </div>
         {userRole === 'admin' && (
-          <Button onClick={handleAddDevice} className="gap-2">
+          <Button onClick={handleAddDevice} className="gap-2" disabled={loading}>
             <Plus className="w-4 h-4" />
             Add Device
           </Button>
@@ -189,8 +267,25 @@ export function DevicesPage() {
         />
       </div>
 
+      {/* Info Banner */}
+      {devices.some(d => d.enabled === false) && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <p className="text-yellow-800 text-sm">
+            ⚠️ Disabled devices will be excluded from manual and scheduled backup jobs.
+          </p>
+        </div>
+      )}
+
       {/* Devices Table */}
       <div className="border rounded-lg bg-white">
+        {loading && devices.length === 0 ? (
+          <div className="flex items-center justify-center py-12">
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-8 h-8 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+              <p className="text-gray-500">Loading devices...</p>
+            </div>
+          </div>
+        ) : (
         <Table>
           <TableHeader>
             <TableRow>
@@ -199,62 +294,89 @@ export function DevicesPage() {
               <TableHead>Vendor</TableHead>
               <TableHead>Protocol</TableHead>
               <TableHead>Port</TableHead>
+              <TableHead>Status</TableHead>
               <TableHead>Last Backup</TableHead>
               <TableHead>Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredDevices.map((device) => (
-              <TableRow key={device.id}>
-                <TableCell>{device.hostname}</TableCell>
-                <TableCell>{device.ip}</TableCell>
-                <TableCell>{device.vendor}</TableCell>
-                <TableCell>{device.protocol}</TableCell>
-                <TableCell>{device.port}</TableCell>
-                <TableCell>{device.lastBackup}</TableCell>
-                <TableCell>
-                  <div className="flex gap-2">
-                    {userRole === 'admin' ? (
-                      <>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            handleEditDevice(device);
-                            setTimeout(() => handleTestConnection(device.id), 100);
-                          }}
-                          title="Test Connection"
-                        >
+            {filteredDevices.map((device) => {
+              const isEnabled = device.enabled !== false; // default to true if undefined
+              return (
+                <TableRow key={device.id}>
+                  <TableCell>{device.hostname}</TableCell>
+                  <TableCell>{device.ip}</TableCell>
+                  <TableCell>{device.vendor}</TableCell>
+                  <TableCell>{device.protocol}</TableCell>
+                  <TableCell>{device.port}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      {userRole === 'admin' ? (
+                        <Switch
+                          checked={isEnabled}
+                          onCheckedChange={() => handleToggleEnabled(device)}
+                          className="data-[state=checked]:bg-green-600"
+                          disabled={togglingId === device.id}
+                        />
+                      ) : null}
+                      <Badge className={isEnabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}>
+                        {isEnabled ? 'Enabled' : 'Disabled'}
+                      </Badge>
+                    </div>
+                  </TableCell>
+                  <TableCell>{device.lastBackup}</TableCell>
+                  <TableCell>
+                    <div className="flex gap-2">
+                      {userRole === 'admin' ? (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              handleEditDevice(device);
+                              setTimeout(() => handleTestConnection(device.id), 100);
+                            }}
+                            title="Test Connection"
+                            disabled={testingConnection || loading}
+                          >
+                            <TestTube className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleEditDevice(device)}
+                            title="Edit"
+                            disabled={loading}
+                          >
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleDeleteDevice(String(device.id))}
+                            title="Delete"
+                            disabled={deletingId === String(device.id)}
+                          >
+                            {deletingId === String(device.id) ? (
+                              <div className="w-4 h-4 border-2 border-red-200 border-t-red-600 rounded-full animate-spin"></div>
+                            ) : (
+                              <Trash2 className="w-4 h-4 text-red-600" />
+                            )}
+                          </Button>
+                        </>
+                      ) : (
+                        <Button variant="outline" size="sm" onClick={() => handleTestConnection(device.id)} title="Test Connection" disabled={testingConnection}>
                           <TestTube className="w-4 h-4" />
                         </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleEditDevice(device)}
-                          title="Edit"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleDeleteDevice(String(device.id))}
-                          title="Delete"
-                        >
-                          <Trash2 className="w-4 h-4 text-red-600" />
-                        </Button>
-                      </>
-                    ) : (
-                      <Button variant="outline" size="sm" onClick={() => handleTestConnection(device.id)} title="Test Connection">
-                        <TestTube className="w-4 h-4" />
-                      </Button>
-                    )}
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
+                      )}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
+        )}
       </div>
 
       {/* Add/Edit Device Dialog */}
@@ -383,14 +505,28 @@ export function DevicesPage() {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setIsDialogOpen(false)} disabled={savingDevice || testingConnection}>
               Cancel
             </Button>
-            <Button onClick={() => handleTestConnection()}>
-              Test Connection
+            <Button onClick={() => handleTestConnection()} disabled={savingDevice || testingConnection}>
+              {testingConnection ? (
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Testing...
+                </div>
+              ) : (
+                'Test Connection'
+              )}
             </Button>
-            <Button onClick={handleSaveDevice}>
-              Save
+            <Button onClick={handleSaveDevice} disabled={savingDevice || testingConnection}>
+              {savingDevice ? (
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Saving...
+                </div>
+              ) : (
+                'Save'
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

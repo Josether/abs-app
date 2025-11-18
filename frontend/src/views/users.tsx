@@ -21,6 +21,9 @@ interface User {
 export function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
+  const [savingUser, setSavingUser] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [resettingPassword, setResettingPassword] = useState(false);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -34,31 +37,37 @@ export function UsersPage() {
     confirmPassword: '',
   });
 
-  const handleAddUser = () => {
+  const handleAddUser = async () => {
     if (!addFormData.username || !addFormData.password) {
-      toast.error('Please fill in all fields');
+      toast.error('Please fill in all required fields');
       return;
     }
 
-    setLoading(true);
-    apiPost('/users', {
-      username: addFormData.username,
-      password: addFormData.password,
-      role: addFormData.role,
-    })
-      .then(() => {
-        setIsAddDialogOpen(false);
-        setAddFormData({ username: '', password: '', role: 'viewer' });
-        toast.success('User added successfully');
-        fetchUsers();
-      })
-      .catch((err) => {
-        toast.error(String(err.message || err));
-      })
-      .finally(() => setLoading(false));
+    if (addFormData.password.length < 6) {
+      toast.error('Password must be at least 6 characters');
+      return;
+    }
+
+    setSavingUser(true);
+    try {
+      await apiPost('/users', {
+        username: addFormData.username,
+        password: addFormData.password,
+        role: addFormData.role,
+      });
+      setIsAddDialogOpen(false);
+      setAddFormData({ username: '', password: '', role: 'viewer' });
+      toast.success('User added successfully');
+      await fetchUsers();
+    } catch (err: unknown) {
+      const msg = (err && typeof err === 'object' && 'message' in err) ? (err as { message?: string }).message : String(err);
+      toast.error('Failed to add user: ' + (msg || 'Unknown error'));
+    } finally {
+      setSavingUser(false);
+    }
   };
 
-  const handleDeleteUser = (user: User) => {
+  const handleDeleteUser = async (user: User) => {
     const adminCount = users.filter(u => u.role === 'admin').length;
 
     if (user.role === 'admin' && adminCount <= 1) {
@@ -66,19 +75,31 @@ export function UsersPage() {
       return;
     }
 
-    setLoading(true);
-    apiDelete(`/users/${user.id}`)
-      .then(() => {
-        toast.success('User deleted successfully');
-        fetchUsers();
-      })
-      .catch((err) => toast.error(String(err.message || err)))
-      .finally(() => setLoading(false));
+    if (!confirm(`Are you sure you want to delete user "${user.username}"?`)) {
+      return;
+    }
+
+    setDeletingId(user.id);
+    try {
+      await apiDelete(`/users/${user.id}`);
+      toast.success('User deleted successfully');
+      await fetchUsers();
+    } catch (err: unknown) {
+      const msg = (err && typeof err === 'object' && 'message' in err) ? (err as { message?: string }).message : String(err);
+      toast.error('Failed to delete user: ' + (msg || 'Unknown error'));
+    } finally {
+      setDeletingId(null);
+    }
   };
 
-  const handleResetPassword = () => {
+  const handleResetPassword = async () => {
     if (!resetFormData.newPassword || !resetFormData.confirmPassword) {
       toast.error('Please fill in all fields');
+      return;
+    }
+
+    if (resetFormData.newPassword.length < 6) {
+      toast.error('Password must be at least 6 characters');
       return;
     }
 
@@ -92,23 +113,31 @@ export function UsersPage() {
       return;
     }
 
-    setLoading(true);
-    apiPut(`/users/${selectedUser.id}`, { password: resetFormData.newPassword })
-      .then(() => {
-        setIsResetDialogOpen(false);
-        setResetFormData({ newPassword: '', confirmPassword: '' });
-        toast.success('Password reset successfully');
-      })
-      .catch((err) => toast.error(String(err.message || err)))
-      .finally(() => setLoading(false));
+    setResettingPassword(true);
+    try {
+      await apiPut(`/users/${selectedUser.id}`, { password: resetFormData.newPassword });
+      setIsResetDialogOpen(false);
+      setResetFormData({ newPassword: '', confirmPassword: '' });
+      toast.success('Password reset successfully');
+    } catch (err: unknown) {
+      const msg = (err && typeof err === 'object' && 'message' in err) ? (err as { message?: string }).message : String(err);
+      toast.error('Failed to reset password: ' + (msg || 'Unknown error'));
+    } finally {
+      setResettingPassword(false);
+    }
   };
 
-  const fetchUsers = () => {
+  const fetchUsers = async () => {
     setLoading(true);
-    apiGet<User[]>('/users')
-      .then((data) => setUsers(data))
-      .catch((err) => toast.error(String(err.message || err)))
-      .finally(() => setLoading(false));
+    try {
+      const data = await apiGet<User[]>('/users');
+      setUsers(data);
+    } catch (err: unknown) {
+      const msg = (err && typeof err === 'object' && 'message' in err) ? (err as { message?: string }).message : String(err);
+      toast.error('Failed to load users: ' + (msg || 'Unknown error'));
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -136,7 +165,7 @@ export function UsersPage() {
           <p className="text-gray-500">Manage web application accounts</p>
         </div>
         {isAdmin && (
-          <Button onClick={() => setIsAddDialogOpen(true)} className="gap-2">
+          <Button onClick={() => setIsAddDialogOpen(true)} className="gap-2" disabled={loading}>
           <Plus className="w-4 h-4" />
           Add User
           </Button>
@@ -145,6 +174,14 @@ export function UsersPage() {
 
       {/* Users Table */}
       <div className="border rounded-lg bg-white">
+        {loading && users.length === 0 ? (
+          <div className="flex items-center justify-center py-12">
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-8 h-8 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+              <p className="text-gray-500">Loading users...</p>
+            </div>
+          </div>
+        ) : (
         <Table>
           <TableHeader>
             <TableRow>
@@ -181,6 +218,7 @@ export function UsersPage() {
                           }}
                           title="Reset Password"
                           className="gap-2"
+                          disabled={loading || deletingId === user.id}
                         >
                           <Key className="w-4 h-4" />
                           Reset PW
@@ -191,9 +229,14 @@ export function UsersPage() {
                           onClick={() => handleDeleteUser(user)}
                           title="Delete"
                           className="gap-2"
+                          disabled={deletingId === user.id}
                         >
-                          <Trash2 className="w-4 h-4 text-red-600" />
-                          Delete
+                          {deletingId === user.id ? (
+                            <div className="w-4 h-4 border-2 border-red-200 border-t-red-600 rounded-full animate-spin"></div>
+                          ) : (
+                            <Trash2 className="w-4 h-4 text-red-600" />
+                          )}
+                          {deletingId === user.id ? 'Deleting...' : 'Delete'}
                         </Button>
                       </>
                     ) : (
@@ -205,6 +248,7 @@ export function UsersPage() {
             ))}
           </TableBody>
         </Table>
+        )}
       </div>
 
       {/* Add User Dialog */}
@@ -254,11 +298,18 @@ export function UsersPage() {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setIsAddDialogOpen(false)} disabled={savingUser}>
               Cancel
             </Button>
-            <Button onClick={handleAddUser}>
-              Save
+            <Button onClick={handleAddUser} disabled={savingUser}>
+              {savingUser ? (
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Saving...
+                </div>
+              ) : (
+                'Save'
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -296,11 +347,18 @@ export function UsersPage() {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsResetDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setIsResetDialogOpen(false)} disabled={resettingPassword}>
               Cancel
             </Button>
-            <Button onClick={handleResetPassword}>
-              Save
+            <Button onClick={handleResetPassword} disabled={resettingPassword}>
+              {resettingPassword ? (
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Resetting...
+                </div>
+              ) : (
+                'Save'
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

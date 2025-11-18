@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from ..database import SessionLocal
 from ..models import Device, Job, Backup
@@ -8,6 +8,7 @@ from ..services.job_controller import submit
 from hashlib import sha256
 from pathlib import Path
 from ..security import get_current_user, require_admin
+from ..services.audit_log import audit_event
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 def get_db():
@@ -20,9 +21,16 @@ async def run_manual(db: Session = Depends(get_db), current_user=Depends(require
     async def task():
         job = Job(triggered_by="manual", status="running"); db.add(job); db.commit(); db.refresh(job)
         devices = db.query(Device).filter_by(enabled=True).all()
+        log_lines = []
         ok = 0
+        
+        log_lines.append(f"Job started at {job.started_at.isoformat()}")
+        log_lines.append(f"Processing {len(devices)} enabled device(s)...")
+        audit_event(user=current_user.username, action="job_run_manual", target=f"job#{job.id}", result="started")
+        
         for d in devices:
             try:
+                log_lines.append(f"[{d.hostname}] Connecting to {d.ip}...")
                 path, content = fetch_running_config(
                     vendor=d.vendor, host=d.ip, username=dec(d.username_enc),
                     password=dec(d.password_enc), secret=dec(d.secret_enc) if d.secret_enc else None,
@@ -32,9 +40,17 @@ async def run_manual(db: Session = Depends(get_db), current_user=Depends(require
                            hash=sha256(content).hexdigest()[:8], path=str(path))
                 db.add(b); ok += 1
                 db.commit()
+                log_lines.append(f"[{d.hostname}] Backup success ({len(content)} bytes, path={path})")
             except Exception as e:
-                pass
-        job.status = "success"; job.devices = ok; db.commit()
+                log_lines.append(f"[{d.hostname}] Backup failed: {str(e)}")
+        
+        from datetime import datetime
+        job.status = "success"; job.devices = ok
+        job.finished_at = datetime.utcnow()
+        log_lines.append(f"Job completed: {ok}/{len(devices)} successful")
+        job.log = "\n".join(log_lines)
+        db.commit()
+        audit_event(user=current_user.username, action="job_run_manual", target=f"job#{job.id}", result=f"success ({ok}/{len(devices)} devices)")
     await submit(task)
     return {"queued": True}
 
@@ -57,6 +73,22 @@ def list_jobs(db: Session = Depends(get_db), current_user=Depends(get_current_us
     return out
 
 
+@router.get("/{job_id}")
+def get_job(job_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    j = db.get(Job, job_id)
+    if not j:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return {
+        "id": j.id,
+        "triggered_by": j.triggered_by,
+        "status": j.status,
+        "started_at": j.started_at.isoformat() if j.started_at else None,
+        "finished_at": j.finished_at.isoformat() if j.finished_at else None,
+        "devices_count": j.devices or 0,
+        "log": j.log or ""
+    }
+
+
 @router.post("/{job_id}/cancel")
 def cancel_job(job_id: int, db: Session = Depends(get_db), current_user=Depends(require_admin)):
     j = db.get(Job, job_id)
@@ -68,4 +100,5 @@ def cancel_job(job_id: int, db: Session = Depends(get_db), current_user=Depends(
     from datetime import datetime
     j.finished_at = datetime.utcnow()
     db.commit()
+    audit_event(user=current_user.username, action="job_cancel", target=f"job#{job_id}", result="success")
     return {"ok": True}

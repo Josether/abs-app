@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -9,53 +9,32 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Badge } from '@/components/ui/badge';
 import { Plus, Edit, Trash2, CheckCircle, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
+import { apiGet, apiPost, apiPut, apiDelete } from '@/lib/api';
 
 interface Schedule {
-  id: string;
+  id: number;
   name: string;
-  intervalDays: number;
-  runAt: string;
-  targetType: string;
-  retention: number;
-  notifyOnFail: boolean;
+  interval_days?: number;
+  intervalDays?: number;
+  run_at?: string;
+  runAt?: string;
+  target_type?: string;
+  targetType?: string;
+  retention?: number;
+  notify_on_fail?: boolean;
+  notifyOnFail?: boolean;
   enabled: boolean;
 }
 
 export function SchedulesPage() {
-  const [schedules, setSchedules] = useState<Schedule[]>([
-    { 
-      id: '1', 
-      name: 'Weekly-Backup', 
-      intervalDays: 7, 
-      runAt: '02:00', 
-      targetType: 'All', 
-      retention: 10,
-      notifyOnFail: true,
-      enabled: true 
-    },
-    { 
-      id: '2', 
-      name: 'Daily-Core', 
-      intervalDays: 1, 
-      runAt: '03:00', 
-      targetType: 'Tag: core', 
-      retention: 30,
-      notifyOnFail: true,
-      enabled: true 
-    },
-    { 
-      id: '3', 
-      name: 'Monthly-Full', 
-      intervalDays: 30, 
-      runAt: '01:00', 
-      targetType: 'All', 
-      retention: 12,
-      notifyOnFail: false,
-      enabled: false 
-    },
-  ]);
+  const [schedules, setSchedules] = useState<Schedule[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [savingSchedule, setSavingSchedule] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [togglingId, setTogglingId] = useState<number | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null);
   const [formData, setFormData] = useState({
@@ -67,6 +46,34 @@ export function SchedulesPage() {
     notifyOnFail: true,
     enabled: true,
   });
+
+  const [userRole] = useState<'admin' | 'viewer'>(() => {
+    try {
+      if (typeof window === 'undefined') return 'viewer';
+      const u = localStorage.getItem('abs_user');
+      if (!u) return 'viewer';
+      return JSON.parse(u).role as 'admin' | 'viewer';
+    } catch {
+      return 'viewer';
+    }
+  });
+
+  const fetchSchedules = async () => {
+    setLoading(true);
+    try {
+      const data = await apiGet<Schedule[]>('/schedules');
+      setSchedules(data);
+    } catch (err: unknown) {
+      const msg = (err && typeof err === 'object' && 'message' in err) ? (err as { message?: string }).message : String(err);
+      toast.error('Failed to load schedules: ' + (msg || 'Unknown error'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchSchedules();
+  }, []);
 
   const handleAddSchedule = () => {
     setEditingSchedule(null);
@@ -84,47 +91,91 @@ export function SchedulesPage() {
 
   const handleEditSchedule = (schedule: Schedule) => {
     setEditingSchedule(schedule);
-    setFormData(schedule);
+    setFormData({
+      name: schedule.name,
+      intervalDays: schedule.interval_days ?? schedule.intervalDays ?? 7,
+      runAt: schedule.run_at ?? schedule.runAt ?? '02:00',
+      targetType: schedule.target_type ?? schedule.targetType ?? 'All',
+      retention: schedule.retention ?? 10,
+      notifyOnFail: schedule.notify_on_fail ?? schedule.notifyOnFail ?? true,
+      enabled: schedule.enabled,
+    });
     setIsDialogOpen(true);
   };
 
-  const handleSaveSchedule = () => {
+  const handleSaveSchedule = async () => {
     if (!formData.name) {
       toast.error('Please enter a schedule name');
       return;
     }
 
-    if (editingSchedule) {
-      setSchedules(schedules.map(s => 
-        s.id === editingSchedule.id 
-          ? { ...s, ...formData }
-          : s
-      ));
-      toast.success('Schedule updated successfully');
-    } else {
-      const newSchedule: Schedule = {
-        id: Date.now().toString(),
-        ...formData,
-      };
-      setSchedules([...schedules, newSchedule]);
-      toast.success('Schedule created successfully');
+    if (formData.intervalDays < 1) {
+      toast.error('Interval must be at least 1 day');
+      return;
     }
-    setIsDialogOpen(false);
+
+    setSavingSchedule(true);
+    try {
+      const payload = {
+        device_id: undefined,
+        schedule_time: formData.runAt,
+        enabled: formData.enabled,
+        interval_days: formData.intervalDays,
+      };
+
+      if (editingSchedule) {
+        await apiPut(`/schedules/${editingSchedule.id}`, payload);
+        toast.success('Schedule updated successfully');
+      } else {
+        await apiPost('/schedules', payload);
+        toast.success('Schedule created successfully');
+      }
+      await fetchSchedules();
+      setIsDialogOpen(false);
+    } catch (err: unknown) {
+      const msg = (err && typeof err === 'object' && 'message' in err) ? (err as { message?: string }).message : String(err);
+      toast.error('Failed to save schedule: ' + (msg || 'Unknown error'));
+    } finally {
+      setSavingSchedule(false);
+    }
   };
 
-  const handleDeleteSchedule = (id: string) => {
-    setSchedules(schedules.filter(s => s.id !== id));
-    toast.success('Schedule deleted successfully');
+  const handleDeleteSchedule = async (id: number) => {
+    if (!confirm('Are you sure you want to delete this schedule?')) {
+      return;
+    }
+
+    setDeletingId(id);
+    try {
+      await apiDelete(`/schedules/${id}`);
+      toast.success('Schedule deleted successfully');
+      await fetchSchedules();
+    } catch (err: unknown) {
+      const msg = (err && typeof err === 'object' && 'message' in err) ? (err as { message?: string }).message : String(err);
+      toast.error('Failed to delete schedule: ' + (msg || 'Unknown error'));
+    } finally {
+      setDeletingId(null);
+    }
   };
 
-  const handleToggleEnabled = (id: string) => {
-    setSchedules(schedules.map(s => 
-      s.id === id 
-        ? { ...s, enabled: !s.enabled }
-        : s
-    ));
-    const schedule = schedules.find(s => s.id === id);
-    toast.success(`Schedule ${schedule?.enabled ? 'disabled' : 'enabled'}`);
+  const handleToggleEnabled = async (schedule: Schedule) => {
+    setTogglingId(schedule.id);
+    try {
+      const newEnabledState = !schedule.enabled;
+      await apiPut(`/schedules/${schedule.id}`, {
+        device_id: undefined,
+        schedule_time: schedule.run_at ?? schedule.runAt ?? '02:00',
+        enabled: newEnabledState,
+        interval_days: schedule.interval_days ?? schedule.intervalDays ?? 7,
+      });
+      toast.success(`Schedule ${newEnabledState ? 'enabled' : 'disabled'}`);
+      await fetchSchedules();
+    } catch (err: unknown) {
+      const msg = (err && typeof err === 'object' && 'message' in err) ? (err as { message?: string }).message : String(err);
+      toast.error('Failed to toggle schedule: ' + (msg || 'Unknown error'));
+    } finally {
+      setTogglingId(null);
+    }
   };
 
   return (
@@ -134,10 +185,25 @@ export function SchedulesPage() {
           <h2 className="text-gray-900">Schedules</h2>
           <p className="text-gray-500">Automated backup schedules (Asia/Jakarta timezone)</p>
         </div>
-        <Button onClick={handleAddSchedule} className="gap-2">
-          <Plus className="w-4 h-4" />
-          Add Schedule
-        </Button>
+        {userRole === 'admin' && (
+          <Button onClick={handleAddSchedule} className="gap-2" disabled={loading}>
+            <Plus className="w-4 h-4" />
+            Add Schedule
+          </Button>
+        )}
+      </div>
+
+      {/* Info Banner */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <p className="text-blue-800 text-sm mb-2">
+          📅 <strong>How scheduling works:</strong>
+        </p>
+        <ul className="text-blue-700 text-sm space-y-1 ml-6 list-disc">
+          <li>Schedules trigger backup jobs automatically at specified intervals</li>
+          <li>Only <strong>enabled devices</strong> will be backed up</li>
+          <li>Jobs run in the background and can be monitored in the Jobs page</li>
+          <li>Disable a schedule to stop automatic backups without deleting it</li>
+        </ul>
       </div>
 
       {/* Schedules Table */}
@@ -155,50 +221,82 @@ export function SchedulesPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {schedules.map((schedule) => (
-              <TableRow key={schedule.id}>
-                <TableCell>{schedule.name}</TableCell>
-                <TableCell>{schedule.intervalDays}</TableCell>
-                <TableCell>{schedule.runAt}</TableCell>
-                <TableCell>{schedule.targetType}</TableCell>
-                <TableCell>Keep {schedule.retention}</TableCell>
-                <TableCell>
-                  {schedule.enabled ? (
-                    <CheckCircle className="w-5 h-5 text-green-600" />
-                  ) : (
-                    <XCircle className="w-5 h-5 text-gray-400" />
-                  )}
-                </TableCell>
-                <TableCell>
-                  <div className="flex gap-2">
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      onClick={() => handleEditSchedule(schedule)}
-                      title="Edit"
-                    >
-                      <Edit className="w-4 h-4" />
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      onClick={() => handleToggleEnabled(schedule.id)}
-                      title="Toggle Enable/Disable"
-                    >
-                      {schedule.enabled ? 'Disable' : 'Enable'}
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      onClick={() => handleDeleteSchedule(schedule.id)}
-                      title="Delete"
-                    >
-                      <Trash2 className="w-4 h-4 text-red-600" />
-                    </Button>
-                  </div>
+            {schedules.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center text-gray-500 py-8">
+                  {loading ? 'Loading schedules...' : 'No schedules found'}
                 </TableCell>
               </TableRow>
-            ))}
+            ) : (
+              schedules.map((schedule) => {
+                const intervalDays = schedule.interval_days ?? schedule.intervalDays ?? 0;
+                const runAt = schedule.run_at ?? schedule.runAt ?? '';
+                const targetType = schedule.target_type ?? schedule.targetType ?? 'All';
+                const retention = schedule.retention ?? 10;
+                
+                return (
+                  <TableRow key={schedule.id}>
+                    <TableCell>{schedule.name}</TableCell>
+                    <TableCell>{intervalDays}</TableCell>
+                    <TableCell>{runAt}</TableCell>
+                    <TableCell>{targetType}</TableCell>
+                    <TableCell>Keep {retention}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <Badge className={schedule.enabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}>
+                          {schedule.enabled ? 'Enabled' : 'Disabled'}
+                        </Badge>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-2">
+                        {userRole === 'admin' ? (
+                          <>
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={() => handleEditSchedule(schedule)}
+                              title="Edit"
+                              disabled={loading || deletingId === schedule.id || togglingId === schedule.id}
+                            >
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={() => handleToggleEnabled(schedule)}
+                              title="Toggle Enable/Disable"
+                              disabled={togglingId === schedule.id || deletingId === schedule.id}
+                            >
+                              {togglingId === schedule.id ? (
+                                <div className="w-4 h-4 border-2 border-gray-400 border-t-gray-600 rounded-full animate-spin"></div>
+                              ) : (
+                                schedule.enabled ? 'Disable' : 'Enable'
+                              )}
+                            </Button>
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              onClick={() => handleDeleteSchedule(schedule.id)}
+                              title="Delete"
+                              disabled={deletingId === schedule.id || togglingId === schedule.id}
+                            >
+                              {deletingId === schedule.id ? (
+                                <div className="w-4 h-4 border-2 border-red-200 border-t-red-600 rounded-full animate-spin"></div>
+                              ) : (
+                                <Trash2 className="w-4 h-4 text-red-600" />
+                              )}
+                            </Button>
+                          </>
+                        ) : (
+                          <span className="text-sm text-gray-500">Read only</span>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
+            )}
           </TableBody>
         </Table>
       </div>
@@ -305,11 +403,18 @@ export function SchedulesPage() {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setIsDialogOpen(false)} disabled={savingSchedule}>
               Cancel
             </Button>
-            <Button onClick={handleSaveSchedule}>
-              Save
+            <Button onClick={handleSaveSchedule} disabled={savingSchedule}>
+              {savingSchedule ? (
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Saving...
+                </div>
+              ) : (
+                'Save'
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

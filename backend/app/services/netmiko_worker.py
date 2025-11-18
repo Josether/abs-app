@@ -3,8 +3,38 @@ from hashlib import sha256
 from pathlib import Path
 from ..settings import settings
 
-# map vendor -> device_type netmiko (bisa kamu tambah)
+# map vendor -> device_type netmiko
+# Format: "Vendor (Device Type)" -> "netmiko_device_type"
 VENDOR_MAP = {
+    # Cisco devices
+    "Cisco (IOS Router/Switch)": "cisco_ios",
+    "Cisco (ASA Firewall)": "cisco_asa",
+    "Cisco (NXOS Data Center)": "cisco_nxos",
+    "Cisco (WLC Controller)": "cisco_wlc_ssh",
+    
+    # Allied Telesis
+    "Allied Telesis (AWPlus)": "allied_telesis_awplus",
+    
+    # Aruba devices
+    "Aruba (AOS-CX Switch)": "aruba_aoscx",
+    "Aruba (AOS AP/Controller)": "aruba_os",
+    
+    # MikroTik devices
+    "MikroTik (RouterOS)": "mikrotik_routeros",
+    "MikroTik (SwitchOS)": "mikrotik_switchos",
+    
+    # Huawei devices
+    "Huawei (Switch/AP)": "huawei",
+    "Huawei (OLT)": "huawei_olt",
+    "Huawei (SmartAX)": "huawei_smartax",
+    
+    # Fortinet devices
+    "Fortinet (FortiGate)": "fortinet",
+    
+    # Juniper devices
+    "Juniper (JunOS)": "juniper",
+    
+    # Legacy support (backward compatibility)
     "Cisco": "cisco_ios",
     "Juniper": "juniper",
     "Mikrotik": "mikrotik_routeros",

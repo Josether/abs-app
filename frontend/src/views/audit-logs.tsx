@@ -1,13 +1,15 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { apiGet } from '@/lib/api';
+import { toast } from 'sonner';
 
 interface AuditLog {
-  id: string;
+  id: number;
   timestamp: string;
   user: string;
   action: string;
@@ -16,42 +18,49 @@ interface AuditLog {
 }
 
 export function AuditLogsPage() {
-  const [logs, setLogs] = useState<AuditLog[]>([
-    { id: '1', timestamp: '11/11 10:01', user: 'admin', action: 'job_run_manual', target: 'SW-01, SW-02, SW-03', result: 'success' },
-    { id: '2', timestamp: '11/11 09:58', user: 'admin', action: 'device_create', target: 'SW-01', result: 'success' },
-    { id: '3', timestamp: '11/11 09:57', user: 'admin', action: 'auth_login', target: '-', result: 'success' },
-    { id: '4', timestamp: '11/11 09:45', user: 'viewer1', action: 'backup_download', target: 'SW-01 (11/10 23:00)', result: 'success' },
-    { id: '5', timestamp: '11/11 09:30', user: 'admin', action: 'schedule_toggle', target: 'Weekly-Backup (enabled)', result: 'success' },
-    { id: '6', timestamp: '11/11 09:15', user: 'admin', action: 'device_test_connection', target: 'SW-02', result: 'failed' },
-    { id: '7', timestamp: '11/11 09:10', user: 'admin', action: 'device_edit', target: 'SW-02', result: 'success' },
-    { id: '8', timestamp: '11/11 09:05', user: 'viewer1', action: 'auth_login', target: '-', result: 'success' },
-    { id: '9', timestamp: '11/11 08:50', user: 'admin', action: 'user_create', target: 'viewer1', result: 'success' },
-    { id: '10', timestamp: '11/11 08:45', user: 'admin', action: 'schedule_create', target: 'Daily-Core', result: 'success' },
-    { id: '11', timestamp: '11/11 08:30', user: 'admin', action: 'retention_prune', target: 'SW-01 (removed 5 old backups)', result: 'success' },
-    { id: '12', timestamp: '11/11 08:00', user: 'admin', action: 'job_cancel', target: '#29', result: 'success' },
-    { id: '13', timestamp: '11/10 23:45', user: 'viewer1', action: 'auth_login', target: '-', result: 'failed' },
-    { id: '14', timestamp: '11/10 23:30', user: 'admin', action: 'device_delete', target: 'OLD-SW-99', result: 'success' },
-    { id: '15', timestamp: '11/10 23:00', user: 'system', action: 'job_run_scheduled', target: 'schedule:Weekly-Backup', result: 'success' },
-  ]);
+  const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [loading, setLoading] = useState(false);
   const [userFilter, setUserFilter] = useState('All');
-  const [dateFilter, setDateFilter] = useState('All');
+  const [currentPage, setCurrentPage] = useState(1);
+  const logsPerPage = 20;
+
+  const fetchLogs = async () => {
+    setLoading(true);
+    try {
+      const data = await apiGet<AuditLog[]>('/audit-logs');
+      setLogs(data);
+    } catch (err) {
+      toast.error(`Failed to fetch audit logs: ${err}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchLogs();
+  }, []);
 
   const users = ['All', ...Array.from(new Set(logs.map(l => l.user)))];
-  const dates = ['All', 'Last 24 hours', 'Last 7 days', 'Last 30 days'];
 
   const filteredLogs = logs.filter(log => {
     const matchesUser = userFilter === 'All' || log.user === userFilter;
-    // For demo, we're not implementing actual date filtering
     return matchesUser;
   });
 
+  // Pagination
+  const totalPages = Math.ceil(filteredLogs.length / logsPerPage);
+  const startIndex = (currentPage - 1) * logsPerPage;
+  const endIndex = startIndex + logsPerPage;
+  const paginatedLogs = filteredLogs.slice(startIndex, endIndex);
+
   const getResultBadge = (result: string) => {
+    const isSuccess = result === 'success' || result.startsWith('success');
     const variants = {
       success: 'bg-green-100 text-green-700',
       failed: 'bg-red-100 text-red-700',
     };
     return (
-      <Badge className={variants[result as keyof typeof variants] || ''}>
+      <Badge className={isSuccess ? variants.success : variants.failed}>
         {result}
       </Badge>
     );
@@ -68,6 +77,17 @@ export function AuditLogsPage() {
     return 'text-gray-600';
   };
 
+  const formatTimestamp = (timestamp: string) => {
+    const date = new Date(timestamp);
+    return date.toLocaleString('en-US', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -76,7 +96,7 @@ export function AuditLogsPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex gap-4 flex-wrap">
+      <div className="flex gap-4 flex-wrap items-center">
         <div className="flex items-center gap-2">
           <span className="text-sm text-gray-600">User:</span>
           <Select value={userFilter} onValueChange={setUserFilter}>
@@ -91,19 +111,13 @@ export function AuditLogsPage() {
           </Select>
         </div>
 
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-600">Date Range:</span>
-          <Select value={dateFilter} onValueChange={setDateFilter}>
-            <SelectTrigger className="w-48">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {dates.map(date => (
-                <SelectItem key={date} value={date}>{date}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        <button
+          onClick={fetchLogs}
+          className="px-4 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700"
+          disabled={loading}
+        >
+          {loading ? 'Loading...' : 'Refresh'}
+        </button>
       </div>
 
       {/* Info Box */}
@@ -144,36 +158,65 @@ export function AuditLogsPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredLogs.map((log) => (
-              <TableRow key={log.id}>
-                <TableCell className="text-gray-600">{log.timestamp}</TableCell>
-                <TableCell>
-                  <span className={`px-2 py-1 rounded text-sm ${
-                    log.user === 'admin' 
-                      ? 'bg-blue-100 text-blue-700' 
-                      : log.user === 'system'
-                      ? 'bg-gray-100 text-gray-700'
-                      : 'bg-green-100 text-green-700'
-                  }`}>
-                    {log.user}
-                  </span>
+            {paginatedLogs.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center text-gray-500 py-8">
+                  {loading ? 'Loading audit logs...' : 'No audit logs found'}
                 </TableCell>
-                <TableCell>
-                  <code className={`text-sm ${getActionColor(log.action)}`}>
-                    {log.action}
-                  </code>
-                </TableCell>
-                <TableCell className="text-gray-600">{log.target}</TableCell>
-                <TableCell>{getResultBadge(log.result)}</TableCell>
               </TableRow>
-            ))}
+            ) : (
+              paginatedLogs.map((log) => (
+                <TableRow key={log.id}>
+                  <TableCell className="text-gray-600">{formatTimestamp(log.timestamp)}</TableCell>
+                  <TableCell>
+                    <span className={`px-2 py-1 rounded text-sm ${
+                      log.user === 'admin' 
+                        ? 'bg-blue-100 text-blue-700' 
+                        : log.user === 'system'
+                        ? 'bg-gray-100 text-gray-700'
+                        : 'bg-green-100 text-green-700'
+                    }`}>
+                      {log.user}
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    <code className={`text-sm ${getActionColor(log.action)}`}>
+                      {log.action}
+                    </code>
+                  </TableCell>
+                  <TableCell className="text-gray-600">{log.target}</TableCell>
+                  <TableCell>{getResultBadge(log.result)}</TableCell>
+                </TableRow>
+              ))
+            )}
           </TableBody>
         </Table>
       </div>
 
-      {/* Pagination would go here in a real app */}
+      {/* Pagination */}
       <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-600">Showing {filteredLogs.length} entries</p>
+        <p className="text-sm text-gray-600">
+          Showing {startIndex + 1}-{Math.min(endIndex, filteredLogs.length)} of {filteredLogs.length} entries
+        </p>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+            disabled={currentPage === 1}
+            className="px-3 py-1 text-sm border rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+          >
+            Previous
+          </button>
+          <span className="px-3 py-1 text-sm">
+            Page {currentPage} of {totalPages || 1}
+          </span>
+          <button
+            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+            disabled={currentPage === totalPages || totalPages === 0}
+            className="px-3 py-1 text-sm border rounded-md disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+          >
+            Next
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Sidebar } from "./components/sidebar";
 import { Topbar } from "./components/topbar";
 import { LoginPage } from "./views/login";
@@ -14,21 +14,45 @@ import { AuditLogsPage } from "./views/audit-logs";
 import { Toaster } from "sonner";
 
 export default function App() {
-  const [currentPage, setCurrentPage] = useState("login");
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  // Initialize state from localStorage to avoid effect warning
+  const [currentPage, setCurrentPage] = useState(() => {
+    if (typeof window !== "undefined") {
+      const savedUser = localStorage.getItem("abs_user");
+      const token = localStorage.getItem("abs_token");
+      if (savedUser && token) {
+        return "dashboard";
+      }
+    }
+    return "login";
+  });
+  
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    if (typeof window !== "undefined") {
+      const savedUser = localStorage.getItem("abs_user");
+      const token = localStorage.getItem("abs_token");
+      return !!(savedUser && token);
+    }
+    return false;
+  });
+  
   const [currentUser, setCurrentUser] = useState<
     { username: string; role: "admin" | "viewer" } | null
-  >(null);
-
-  useEffect(() => {
-    const savedUser = localStorage.getItem("abs_user");
-    if (savedUser) {
-      const user = JSON.parse(savedUser);
-      setCurrentUser(user);
-      setIsAuthenticated(true);
-      setCurrentPage("dashboard");
+  >(() => {
+    if (typeof window !== "undefined") {
+      const savedUser = localStorage.getItem("abs_user");
+      const token = localStorage.getItem("abs_token");
+      if (savedUser && token) {
+        try {
+          return JSON.parse(savedUser);
+        } catch {
+          // Invalid stored data, clear it
+          localStorage.removeItem("abs_user");
+          localStorage.removeItem("abs_token");
+        }
+      }
     }
-  }, []);
+    return null;
+  });
 
   const handleLogin = (username: string, role: "admin" | "viewer") => {
     const user = { username, role };
@@ -42,6 +66,7 @@ export default function App() {
     setCurrentUser(null);
     setIsAuthenticated(false);
     localStorage.removeItem("abs_user");
+    localStorage.removeItem("abs_token");
     setCurrentPage("login");
   };
 

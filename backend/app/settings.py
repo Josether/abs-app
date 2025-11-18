@@ -1,7 +1,7 @@
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
-    SECRET_KEY: str = "change-me"
+    SECRET_KEY: str = "2502011285-josephcristianlubis"
     ALGORITHM: str = "HS256"
     # Default access token expiry: 8 hours
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 8

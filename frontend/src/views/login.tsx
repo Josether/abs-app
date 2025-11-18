@@ -6,18 +6,51 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
+import { apiPost } from '@/lib/api';
 
 interface LoginPageProps {
-  onLogin: (username: string, password: string) => void;
+  onLogin: (username: string, role: "admin" | "viewer") => void;
+}
+
+interface LoginResponse {
+  access_token: string;
+  username: string;
+  role: "admin" | "viewer";
 }
 
 export function LoginPage({ onLogin }: LoginPageProps) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onLogin(username, password);
+    
+    if (!username || !password) {
+      toast.error('Please enter both username and password');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const response = await apiPost<{ username: string; password: string }, LoginResponse>(
+        '/auth/token',
+        { username, password },
+        false // no auth needed for login
+      );
+      
+      // Store token for API calls
+      localStorage.setItem('abs_token', response.access_token);
+      
+      // Notify parent component
+      onLogin(response.username, response.role);
+      
+      toast.success('Login successful!');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Login failed');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -60,8 +93,15 @@ export function LoginPage({ onLogin }: LoginPageProps) {
               />
             </div>
 
-            <Button type="submit" className="w-full">
-              Login
+            <Button type="submit" className="w-full" disabled={isLoading}>
+              {isLoading ? (
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Logging in...
+                </div>
+              ) : (
+                'Login'
+              )}
             </Button>
           </form>
 

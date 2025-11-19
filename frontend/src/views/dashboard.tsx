@@ -4,7 +4,28 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { HardDrive, CheckCircle, XCircle, Calendar, AlertCircle } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { apiGet } from "@/lib/api";
+
+interface Job {
+  id: number;
+  triggered_by: string;
+  devices: number;
+  status: string;
+  started_at: string;
+  finished_at: string;
+}
+
+interface Device {
+  id: number;
+  hostname: string;
+  enabled: boolean;
+}
+
+interface Schedule {
+  id: number;
+  enabled: boolean;
+}
 
 export function DashboardPage() {
   const [userRole] = useState<'admin' | 'viewer'>(() => {
@@ -18,19 +39,62 @@ export function DashboardPage() {
     }
   });
 
-  const stats = [
-    { label: 'Total Devices', value: '15', icon: HardDrive, color: 'text-blue-600', bgColor: 'bg-blue-100' },
-    { label: 'Successful Backups (7 days)', value: '98', icon: CheckCircle, color: 'text-green-600', bgColor: 'bg-green-100' },
-    { label: 'Failed Backups (7 days)', value: '2', icon: XCircle, color: 'text-red-600', bgColor: 'bg-red-100' },
-    { label: 'Active Schedules', value: '3', icon: Calendar, color: 'text-purple-600', bgColor: 'bg-purple-100' },
-  ];
+  const [stats, setStats] = useState({
+    totalDevices: 0,
+    successfulBackups: 0,
+    failedBackups: 0,
+    activeSchedules: 0,
+  });
+  const [recentJobs, setRecentJobs] = useState<Job[]>([]);
 
-  const recentJobs = [
-    { id: '#25', devices: 3, trigger: 'manual', status: 'success', duration: '01:32', startedAt: '11/11 10:00' },
-    { id: '#24', devices: 15, trigger: 'schedule:Weekly', status: 'success', duration: '04:23', startedAt: '11/08 02:00' },
-    { id: '#23', devices: 5, trigger: 'manual', status: 'failed', duration: '00:45', startedAt: '11/07 15:30' },
-    { id: '#22', devices: 3, trigger: 'schedule:Daily', status: 'success', duration: '01:15', startedAt: '11/07 02:00' },
-    { id: '#21', devices: 1, trigger: 'manual', status: 'success', duration: '00:28', startedAt: '11/06 18:45' },
+  const [recentJobs, setRecentJobs] = useState<Job[]>([]);
+
+  useEffect(() => {
+    const fetchDashboardData = async () => {
+      try {
+        // Fetch devices
+        const devices = await apiGet<Device[]>('/devices');
+        const totalDevices = devices.length;
+
+        // Fetch schedules
+        const schedules = await apiGet<Schedule[]>('/schedules');
+        const activeSchedules = schedules.filter(s => s.enabled).length;
+
+        // Fetch recent jobs
+        const jobs = await apiGet<Job[]>('/jobs');
+        setRecentJobs(jobs.slice(0, 5)); // Top 5 recent jobs
+
+        // Calculate backup stats from recent jobs (last 7 days)
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        
+        const recentJobsLast7Days = jobs.filter(job => {
+          const jobDate = new Date(job.started_at);
+          return jobDate >= sevenDaysAgo;
+        });
+
+        const successfulBackups = recentJobsLast7Days.filter(j => j.status === 'success').length;
+        const failedBackups = recentJobsLast7Days.filter(j => j.status === 'failed').length;
+
+        setStats({
+          totalDevices,
+          successfulBackups,
+          failedBackups,
+          activeSchedules,
+        });
+      } catch (error) {
+        console.error('Failed to fetch dashboard data:', error);
+      }
+    };
+
+    fetchDashboardData();
+  }, []);
+
+  const statsDisplay = [
+    { label: 'Total Devices', value: stats.totalDevices.toString(), icon: HardDrive, color: 'text-blue-600', bgColor: 'bg-blue-100' },
+    { label: 'Successful Backups (7 days)', value: stats.successfulBackups.toString(), icon: CheckCircle, color: 'text-green-600', bgColor: 'bg-green-100' },
+    { label: 'Failed Backups (7 days)', value: stats.failedBackups.toString(), icon: XCircle, color: 'text-red-600', bgColor: 'bg-red-100' },
+    { label: 'Active Schedules', value: stats.activeSchedules.toString(), icon: Calendar, color: 'text-purple-600', bgColor: 'bg-purple-100' },
   ];
 
   const getStatusBadge = (status: string) => {
@@ -64,7 +128,7 @@ export function DashboardPage() {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {stats.map((stat) => {
+        {statsDisplay.map((stat) => {
           const Icon = stat.icon;
           return (
             <Card key={stat.label}>
@@ -101,16 +165,39 @@ export function DashboardPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {recentJobs.map((job) => (
-                  <TableRow key={job.id}>
-                    <TableCell>{job.id}</TableCell>
-                    <TableCell>{job.devices}</TableCell>
-                    <TableCell>{job.trigger}</TableCell>
-                    <TableCell>{getStatusBadge(job.status)}</TableCell>
-                    <TableCell>{job.duration}</TableCell>
-                    <TableCell>{job.startedAt}</TableCell>
+                {recentJobs.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center text-gray-500 py-8">
+                      No jobs yet. Run your first backup from the Jobs page.
+                    </TableCell>
                   </TableRow>
-                ))}
+                ) : (
+                  recentJobs.map((job) => {
+                    const startedDate = new Date(job.started_at);
+                    const finishedDate = job.finished_at ? new Date(job.finished_at) : null;
+                    const duration = finishedDate 
+                      ? Math.floor((finishedDate.getTime() - startedDate.getTime()) / 1000 / 60) + 'm'
+                      : '-';
+                    const startedAt = startedDate.toLocaleString('en-US', { 
+                      month: '2-digit', 
+                      day: '2-digit', 
+                      hour: '2-digit', 
+                      minute: '2-digit',
+                      hour12: false 
+                    });
+
+                    return (
+                      <TableRow key={job.id}>
+                        <TableCell>#{job.id}</TableCell>
+                        <TableCell>{job.devices || 0}</TableCell>
+                        <TableCell>{job.triggered_by}</TableCell>
+                        <TableCell>{getStatusBadge(job.status)}</TableCell>
+                        <TableCell>{duration}</TableCell>
+                        <TableCell>{startedAt}</TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
               </TableBody>
             </Table>
           </div>

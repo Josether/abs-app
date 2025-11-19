@@ -11,7 +11,7 @@ export default function LoginRoute() {
   const handleLogin = async (username: string, password: string) => {
     try {
       const res = await apiPost<{ username: string; password: string }, { access_token: string; username: string; role: string }>(
-        "/auth/token",
+        "/login",
         { username, password },
         false,
       );

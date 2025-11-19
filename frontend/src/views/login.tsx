@@ -39,8 +39,9 @@ export function LoginPage({ onLogin }: LoginPageProps) {
         false // no auth needed for login
       );
       
-      // Store token for API calls
+      // Store token and user info for API calls and protected routes
       localStorage.setItem('abs_token', response.access_token);
+      localStorage.setItem('abs_user', JSON.stringify({ username: response.username, role: response.role }));
       
       // Notify parent component
       onLogin(response.username, response.role);

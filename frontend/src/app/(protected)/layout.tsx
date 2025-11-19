@@ -53,6 +53,7 @@ export default function ProtectedLayout({ children }: { children: ReactNode }) {
   const handleLogout = () => {
     if (typeof window !== "undefined") {
       localStorage.removeItem("abs_user");
+      localStorage.removeItem("abs_token");
     }
     router.replace("/login");
   };

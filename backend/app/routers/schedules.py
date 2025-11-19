@@ -20,14 +20,8 @@ def get_db():
 
 
 def _ensure_default_schedule():
-    db = SessionLocal()
-    try:
-        if not db.query(Schedule).first():
-            s = Schedule(name="weekly-all", interval_days=7, run_at="02:00", target_type="All", enabled=True)
-            db.add(s)
-            db.commit()
-    finally:
-        db.close()
+    # No default schedule - users should create their own
+    pass
 
 
 @router.get("", response_model=list[ScheduleOut])

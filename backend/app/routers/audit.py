@@ -17,14 +17,8 @@ def get_db():
 
 
 def _ensure_example_audit():
-    db = SessionLocal()
-    try:
-        if not db.query(Audit).first():
-            a1 = Audit(user="system", action="init", target="db", result="success")
-            db.add(a1)
-            db.commit()
-    finally:
-        db.close()
+    # No example audit logs - start clean
+    pass
 
 
 @router.get("", response_model=list[AuditOut])

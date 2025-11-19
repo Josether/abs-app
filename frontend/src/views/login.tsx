@@ -34,7 +34,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
     setIsLoading(true);
     try {
       const response = await apiPost<{ username: string; password: string }, LoginResponse>(
-        '/auth/token',
+        '/login',
         { username, password },
         false // no auth needed for login
       );

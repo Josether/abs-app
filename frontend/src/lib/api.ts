@@ -1,6 +1,6 @@
 // src/lib/api.ts
 const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+  process.env.NEXT_PUBLIC_API_BASE ?? "/api";
 
 function getAuthHeader() {
   if (typeof window === "undefined") return {};

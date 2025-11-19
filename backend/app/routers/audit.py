@@ -27,9 +27,6 @@ def _ensure_example_audit():
         db.close()
 
 
-_ensure_example_audit()
-
-
 @router.get("", response_model=list[AuditOut])
 def list_audit(db: Session = Depends(get_db), current_user=Depends(require_admin)):
     rows = db.query(Audit).order_by(Audit.timestamp.desc()).all()

@@ -30,4 +30,6 @@ app.include_router(auth_router.router)
 async def on_startup():
     # Ensure default users exist after tables are created
     users_router._ensure_default_users()
+    schedules_router._ensure_default_schedule()
+    audit_router._ensure_example_audit()
     scheduler.start()

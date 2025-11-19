@@ -30,9 +30,6 @@ def _ensure_default_schedule():
         db.close()
 
 
-_ensure_default_schedule()
-
-
 @router.get("", response_model=list[ScheduleOut])
 def list_schedules(current_user=Depends(get_current_user), db: Session = Depends(get_db)):
     rows = db.query(Schedule).all()

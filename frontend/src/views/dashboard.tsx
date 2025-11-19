@@ -47,8 +47,6 @@ export function DashboardPage() {
   });
   const [recentJobs, setRecentJobs] = useState<Job[]>([]);
 
-  const [recentJobs, setRecentJobs] = useState<Job[]>([]);
-
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {

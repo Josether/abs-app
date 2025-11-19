@@ -75,7 +75,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
               <Input
                 id="username"
                 type="text"
-                placeholder="admin"
+                placeholder=""
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 className="mt-1"
@@ -87,7 +87,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
               <Input
                 id="password"
                 type="password"
-                placeholder="admin123"
+                placeholder=""
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="mt-1"
@@ -105,12 +105,6 @@ export function LoginPage({ onLogin }: LoginPageProps) {
               )}
             </Button>
           </form>
-
-          <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-            <p className="text-sm text-gray-600 mb-2">Default credentials:</p>
-            <p className="text-xs text-gray-500">Admin: admin / admin123</p>
-            <p className="text-xs text-gray-500">Viewer: viewer / viewer123</p>
-          </div>
         </div>
       </div>
     </div>

@@ -31,9 +31,6 @@ def _ensure_default_users():
         db.close()
 
 
-_ensure_default_users()
-
-
 @router.get("", response_model=list[UserOut])
 def list_users(current_user=Depends(get_current_user), db: Session = Depends(get_db)):
     users = db.query(User).all()

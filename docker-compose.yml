@@ -31,12 +31,14 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_BASE=/api
     container_name: abs-frontend
     restart: unless-stopped
     ports:
       - "2309:3000"
     environment:
-      - NEXT_PUBLIC_API_BASE=http://localhost:2003
+      - NEXT_PUBLIC_API_BASE=/api
     depends_on:
       - backend
     networks:

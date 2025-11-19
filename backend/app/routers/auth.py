@@ -20,10 +20,10 @@ class TokenResponse(BaseModel):
     role: str
 
 
-router = APIRouter(prefix="/auth", tags=["auth"])
+router = APIRouter(tags=["auth"])
 
 
-@router.post("/token", response_model=TokenResponse)
+@router.post("/login", response_model=TokenResponse)
 def login_for_access_token(payload: TokenRequest):
     db = SessionLocal()
     try:

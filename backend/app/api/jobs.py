@@ -32,11 +32,15 @@ async def run_manual(db: Session = Depends(get_db), current_user=Depends(require
         for d in devices:
             try:
                 log_lines.append(f"[{d.hostname}] Connecting to {d.ip}...")
+                
+                # Fetch running config
                 path, content = fetch_running_config(
                     vendor=d.vendor, host=d.ip, username=dec(d.username_enc),
                     password=dec(d.password_enc), secret=dec(d.secret_enc) if d.secret_enc else None,
                     protocol=d.protocol, port=d.port
                 )
+                
+                # Save backup record
                 b = Backup(device_id=d.id, size_bytes=len(content),
                            hash=sha256(content).hexdigest()[:8], path=str(path))
                 db.add(b); ok += 1
@@ -44,13 +48,17 @@ async def run_manual(db: Session = Depends(get_db), current_user=Depends(require
                 log_lines.append(f"[{d.hostname}] Backup success ({len(content)} bytes, path={path})")
                 
                 # CRITICAL: Delay antar device untuk Allied Telesis (rate limiting)
-                await asyncio.sleep(3)  # Wait 3 seconds before next device
-                log_lines.append(f"[{d.hostname}] Waiting 3s before next device...")
+                if len(devices) > 1:  # Only delay if multiple devices
+                    await asyncio.sleep(3)  # Wait 3 seconds before next device
+                    db.expire_all()  # Refresh all SQLAlchemy objects after async delay
+                    log_lines.append(f"[{d.hostname}] Waiting 3s before next device...")
                 
             except Exception as e:
                 log_lines.append(f"[{d.hostname}] Backup failed: {str(e)}")
                 # Also wait on error to prevent rapid failed attempts
-                await asyncio.sleep(2)
+                if len(devices) > 1:
+                    await asyncio.sleep(2)
+                    db.expire_all()  # Refresh session
         
         from datetime import datetime
         job.status = "success"; job.devices = ok

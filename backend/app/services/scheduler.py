@@ -59,13 +59,17 @@ async def run_scheduled_backup(schedule_id: int, schedule_name: str):
                 log_lines.append(f"[{d.hostname}] Backup success ({len(content)} bytes, path={path})")
                 
                 # CRITICAL: Delay antar device untuk Allied Telesis (rate limiting)
-                await asyncio.sleep(3)  # Wait 3 seconds before next device
-                log_lines.append(f"[{d.hostname}] Waiting 3s before next device...")
+                if len(devices) > 1:  # Only delay if multiple devices
+                    await asyncio.sleep(3)  # Wait 3 seconds before next device
+                    db.expire_all()  # Refresh all SQLAlchemy objects after async delay
+                    log_lines.append(f"[{d.hostname}] Waiting 3s before next device...")
                 
             except Exception as e:
                 log_lines.append(f"[{d.hostname}] Backup failed: {str(e)}")
                 # Also wait on error to prevent rapid failed attempts
-                await asyncio.sleep(2)
+                if len(devices) > 1:
+                    await asyncio.sleep(2)
+                    db.expire_all()  # Refresh session
         
         # Update job status
         job.status = "success"

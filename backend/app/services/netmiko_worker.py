@@ -58,14 +58,11 @@ def _connect_telnet_manual(
     import telnetlib
     import time
     
-    print(f"\n[Telnet] Opening connection to {host}:{port} ...")
-    
-    # Use telnetlib directly - this WORKS!
+    # Use telnetlib directly
     tn = telnetlib.Telnet(host, port, timeout=30)
     time.sleep(1)
     
     # FLEXIBLE login prompt detection (Username, login, User Name, etc)
-    print(f"[Telnet] Waiting for login prompt...")
     index, match, text = tn.expect([
         b"Username:", b"username:", b"User Name:", b"User:", 
         b"Login:", b"login:", b"USER:"
@@ -74,13 +71,11 @@ def _connect_telnet_manual(
     # Send username
     tn.write(username.encode('ascii') + b"\n")
     time.sleep(1)
-    print(f"[Telnet] Sent username")
     
     # Wait for password prompt (flexible detection)
     tn.expect([b"Password:", b"password:", b"PASS:"], timeout=15)
     tn.write(password.encode('ascii') + b"\n")
     time.sleep(2)
-    print(f"[Telnet] Sent password")
     
     # Enter enable mode if secret provided
     if secret:
@@ -89,7 +84,6 @@ def _connect_telnet_manual(
         tn.expect([b"Password:", b"password:"], timeout=15)
         tn.write(secret.encode('ascii') + b"\n")
         time.sleep(2)
-        print(f"[Telnet] Entered enable mode")
     
     # Disable paging (try multiple times for reliability)
     tn.write(b"terminal length 0\n")
@@ -100,8 +94,6 @@ def _connect_telnet_manual(
     tn.write(b"terminal length 0\n")
     time.sleep(0.5)
     tn.read_very_eager()
-    
-    print(f"[Telnet] Disabled paging")
     
     return tn
 
@@ -128,11 +120,9 @@ def _connect_ssh_normal(
         "fast_cli": False,
     }
 
-    print(f"\n[SSH] Connecting to {host}:{port} (type={device_type}) ...")
     conn = ConnectHandler(**device)
 
     if secret:
-        print("[SSH] Entering enable mode...")
         conn.enable()
 
     return conn
@@ -159,15 +149,6 @@ def fetch_running_config(
 
     session_log = os.path.join(tempfile.gettempdir(), f"netmiko_{host}.log")
 
-    print(f"\n{'='*60}")
-    print("FETCH RUNNING CONFIG")
-    print(f"  Host     : {host}")
-    print(f"  Vendor   : {vendor}")
-    print(f"  Protocol : {protocol}")
-    print(f"  Username : {username}")
-    print(f"  Secret   : {'***' if secret else 'None'}")
-    print(f"{'='*60}\n")
-
     conn = None
     output = ""
     tn = None  # For telnetlib connection
@@ -187,7 +168,6 @@ def fetch_running_config(
             )
             
             # Send command to get config using telnetlib
-            print("Mengambil konfigurasi...")
             command = cmd or "show running-config"
             tn.write(command.encode('ascii') + b"\n")
             import time
@@ -198,7 +178,6 @@ def fetch_running_config(
             
             # Handle --More-- prompts if paging not fully disabled
             while b"--More--" in raw_output or b"-- More --" in raw_output:
-                print("[Telnet] Detected --More--, sending space...")
                 tn.write(b" ")
                 time.sleep(1)
                 additional = _read_all(tn, timeout=2)
@@ -227,8 +206,6 @@ def fetch_running_config(
                 cleaned.append(line)
             output = '\n'.join(cleaned)
             
-            print(f"✅ Backup konfigurasi berhasil ({len(output)} bytes)")
-            
         else:
             conn = _connect_ssh_normal(
                 vendor=vendor,
@@ -240,30 +217,11 @@ def fetch_running_config(
                 session_log=session_log,
             )
             
-            print("Mengambil konfigurasi...")
             output = conn.send_command(cmd or "show running-config", read_timeout=60)
-            print(f"✅ Backup konfigurasi berhasil ({len(output)} bytes)")
 
     except Exception as e:
         error_msg = str(e)
-        traceback_str = traceback.format_exc()
-
-        print("\n❌ NETMIKO ERROR:")
-        print(f"   Error: {error_msg}")
-        print("\nTraceback:")
-        print(traceback_str)
-
-        try:
-            if os.path.exists(session_log):
-                with open(session_log, "r", encoding="utf-8", errors="ignore") as f:
-                    log_content = f.read()
-                print("\n📋 NETMIKO SESSION LOG:")
-                print("=" * 60)
-                print(log_content)
-                print("=" * 60)
-        except Exception as log_err:
-            print(f"Tidak bisa baca session log: {log_err}")
-
+        # Session log available at: session_log (for debugging if needed)
         raise Exception(f"Connection failed: {host} | Error: {error_msg}")
 
     finally:

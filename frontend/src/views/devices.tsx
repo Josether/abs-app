@@ -501,6 +501,11 @@ export function DevicesPage() {
 
             <div className="p-3 bg-gray-50 rounded-lg text-sm text-gray-600">
               💡 Device credentials are stored encrypted and never shown again.
+              {!editingDevice && (
+                <div className="mt-2 text-blue-600">
+                  ℹ️ Tip: Save the device first, then use Edit → Test Connection to verify connectivity.
+                </div>
+              )}
             </div>
           </div>
 
@@ -508,16 +513,19 @@ export function DevicesPage() {
             <Button variant="outline" onClick={() => setIsDialogOpen(false)} disabled={savingDevice || testingConnection}>
               Cancel
             </Button>
-            <Button onClick={() => handleTestConnection()} disabled={savingDevice || testingConnection}>
-              {testingConnection ? (
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  Testing...
-                </div>
-              ) : (
-                'Test Connection'
-              )}
-            </Button>
+            {/* Only show Test Connection button when editing existing device */}
+            {editingDevice && (
+              <Button onClick={() => handleTestConnection()} disabled={savingDevice || testingConnection}>
+                {testingConnection ? (
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    Testing...
+                  </div>
+                ) : (
+                  'Test Connection'
+                )}
+              </Button>
+            )}
             <Button onClick={handleSaveDevice} disabled={savingDevice || testingConnection}>
               {savingDevice ? (
                 <div className="flex items-center gap-2">

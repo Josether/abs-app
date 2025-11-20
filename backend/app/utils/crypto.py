@@ -13,9 +13,14 @@ def _get_key() -> bytes:
 
 f = Fernet(_get_key())
 
-# TEMPORARY: Disable encryption for testing - will enable after all working
-def enc(s: str) -> str: 
-    return s  # No encryption - store plaintext for testing
-    
-def dec(s: str) -> str: 
-    return s  # No decryption - return as-is
+def enc(s: str) -> str:
+    """Encrypt string using Fernet symmetric encryption."""
+    if not s:
+        return ""
+    return f.encrypt(s.encode()).decode()
+
+def dec(s: str) -> str:
+    """Decrypt string using Fernet symmetric encryption."""
+    if not s:
+        return ""
+    return f.decrypt(s.encode()).decode()

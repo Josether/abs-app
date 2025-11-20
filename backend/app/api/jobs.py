@@ -27,7 +27,6 @@ async def run_manual(db: Session = Depends(get_db), current_user=Depends(require
             # Re-query job with fresh session
             job = db.query(Job).filter(Job.id == job_id).first()
             if not job:
-                print(f"[ERROR] Job {job_id} not found in database")
                 return
             
             log_lines = []

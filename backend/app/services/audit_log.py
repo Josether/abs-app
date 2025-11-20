@@ -25,6 +25,6 @@ def audit_event(user: str, action: str, target: str, result: str):
         db.add(a)
         db.commit()
     except Exception as e:
-        print(f"Failed to log audit event: {e}")
+        print(f"[Audit] Failed to log event: {e}")
     finally:
         db.close()

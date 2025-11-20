@@ -50,24 +50,37 @@ def _device_type(vendor: str, protocol: str) -> str:
 def fetch_running_config(*, vendor: str, host: str, username: str, password: str, secret: str | None, protocol: str, port: int, cmd: str | None=None) -> tuple[str, bytes]:
     """
     Connect to network device and fetch running configuration using Netmiko.
-    Raises exception if connection fails - NO FALLBACK to simulated config.
+    Matches the exact pattern from the original working Python script.
     """
+    device_type = _device_type(vendor, protocol)
     device = {
-        "device_type": _device_type(vendor, protocol),
+        "device_type": device_type,
         "host": host, 
         "username": username, 
         "password": password, 
         "port": port,
     }
     
-    # Connect to device
-    with ConnectHandler(**device) as conn:
-        # Enable privileged mode if secret is provided
-        if secret:
-            conn.enable()
+    # DO NOT add secret to device dict - we'll call enable() manually after connection
+    # This matches the original script pattern
+    
+    try:
+        # Connect to device (same as: net_connect = ConnectHandler(**device))
+        net_connect = ConnectHandler(**device)
         
-        # Fetch configuration
-        output = conn.send_command(cmd or "show running-config", read_timeout=60)
+        # Enter privileged mode (same as: net_connect.enable())
+        if secret:
+            net_connect.enable()
+        
+        # Fetch configuration (same as: output = net_connect.send_command("show running-config"))
+        output = net_connect.send_command(cmd or "show running-config", read_timeout=60)
+        
+        # Disconnect
+        net_connect.disconnect()
+        
+    except Exception as e:
+        # Re-raise with more context for debugging
+        raise Exception(f"Login failed: {host} (device_type={device_type}, port={port}, user={username})") from e
     
     # Save to file
     content = output.encode()

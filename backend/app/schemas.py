@@ -53,10 +53,13 @@ class UserOut(BaseModel):
 
 # --- Schedules ---
 class ScheduleIn(BaseModel):
+    name: Optional[str] = None
     device_id: Optional[int] = None
     schedule_time: str  # HH:MM
     enabled: bool = True
     interval_days: Optional[int] = None
+    target_type: Optional[str] = None  # All/Tag/Devices
+    target_tags: Optional[str] = None  # comma-separated tags for Tag type
 
 
 class ScheduleOut(BaseModel):
@@ -66,6 +69,7 @@ class ScheduleOut(BaseModel):
     enabled: bool
     interval_days: int
     target_type: str
+    target_tags: Optional[str] = None
     retention: int
     notify_on_fail: bool
 

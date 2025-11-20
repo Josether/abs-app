@@ -1,6 +1,6 @@
 from ..database import SessionLocal
 from ..models import Audit
-from datetime import datetime
+from ..utils.timeutil import tznow
 
 
 def audit_event(user: str, action: str, target: str, result: str):
@@ -20,7 +20,7 @@ def audit_event(user: str, action: str, target: str, result: str):
             action=action,
             target=target,
             result=result,
-            timestamp=datetime.utcnow()
+            timestamp=tznow()
         )
         db.add(a)
         db.commit()

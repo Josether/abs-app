@@ -1,6 +1,7 @@
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from datetime import datetime, time
+from ..utils.timeutil import tznow
 from ..settings import settings
 from ..database import SessionLocal
 from ..models import Schedule, Device, Job, Backup
@@ -36,9 +37,37 @@ async def run_scheduled_backup(schedule_id: int, schedule_name: str):
         log_lines.append(f"Scheduled job started at {job.started_at.isoformat()}")
         log_lines.append(f"Schedule: {schedule_name}")
         
-        # Get enabled devices
-        devices = db.query(Device).filter_by(enabled=True).all()
-        log_lines.append(f"Processing {len(devices)} enabled device(s)...")
+        # Get schedule configuration to filter devices
+        schedule = db.query(Schedule).filter_by(id=schedule_id).first()
+        if not schedule:
+            log_lines.append(f"ERROR: Schedule {schedule_id} not found")
+            job.status = "failed"
+            job.log = "\n".join(log_lines)
+            db.commit()
+            return
+        
+        # Filter devices based on target_type and target_tags
+        query = db.query(Device).filter_by(enabled=True)
+        
+        if schedule.target_type == "Tag" and schedule.target_tags:
+            # Filter by tags - device must have at least one matching tag
+            target_tags = [t.strip() for t in schedule.target_tags.split(",") if t.strip()]
+            log_lines.append(f"Target: Devices with tags [{', '.join(target_tags)}]")
+            
+            # Get devices that have ANY of the target tags
+            filtered_devices = []
+            for d in query.all():
+                if d.tags:
+                    device_tags = [t.strip().lower() for t in d.tags.split(",") if t.strip()]
+                    if any(tag.lower() in device_tags for tag in target_tags):
+                        filtered_devices.append(d)
+            devices = filtered_devices
+        else:
+            # All enabled devices
+            log_lines.append(f"Target: All enabled devices")
+            devices = query.all()
+        
+        log_lines.append(f"Processing {len(devices)} device(s)...")
         
         # Extract device info with decrypted credentials
         device_list = []
@@ -96,7 +125,7 @@ async def run_scheduled_backup(schedule_id: int, schedule_name: str):
         if job:
             job.status = "success"
             job.devices = ok
-            job.finished_at = datetime.utcnow()
+            job.finished_at = tznow()
             job.log = "\n".join(log_lines)
             db.commit()
         
@@ -112,7 +141,7 @@ async def run_scheduled_backup(schedule_id: int, schedule_name: str):
         # Handle unexpected errors
         if 'job' in locals():
             job.status = "failed"
-            job.finished_at = datetime.utcnow()
+            job.finished_at = tznow()
             job.log = f"Job failed: {str(e)}"
             db.commit()
         audit_event(

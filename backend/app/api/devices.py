@@ -66,6 +66,19 @@ def delete_device(device_id: int, db: Session = Depends(get_db), current_user=De
 def list_devices(current_user=Depends(get_current_user), db: Session = Depends(get_db)):
     return [DeviceOut.model_validate(d.__dict__) for d in db.query(Device).all()]
 
+@router.get("/tags/available")
+def get_available_tags(current_user=Depends(get_current_user), db: Session = Depends(get_db)):
+    """Get all unique tags used across all devices"""
+    devices = db.query(Device).all()
+    tags_set = set()
+    for d in devices:
+        if d.tags:
+            for tag in d.tags.split(","):
+                tag = tag.strip()
+                if tag:
+                    tags_set.add(tag)
+    return {"tags": sorted(list(tags_set))}
+
 @router.post("/{device_id}/test", response_model=TestResult)
 def test_device(device_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     d = db.get(Device, device_id)

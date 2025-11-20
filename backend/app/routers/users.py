@@ -5,8 +5,7 @@ from ..models import User
 from ..schemas import UserCreate, UserOut, UserUpdate
 from ..security import hash_password, get_current_user, require_admin
 from ..models import Audit
-
-from datetime import datetime
+from ..utils.timeutil import tznow
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -47,7 +46,7 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db), current_user
     db.commit()
     db.refresh(u)
     # audit log
-    a = Audit(user=current_user.username, action="create_user", target=u.username, result="success", timestamp=datetime.utcnow())
+    a = Audit(user=current_user.username, action="create_user", target=u.username, result="success", timestamp=tznow())
     db.add(a); db.commit()
     return UserOut(id=u.id, username=u.username, role=u.role, created_at=u.created_at)
 
@@ -68,7 +67,7 @@ def update_user(user_id: int, payload: UserUpdate, db: Session = Depends(get_db)
         u.password_hash = hash_password(payload.password)
     db.commit()
     db.refresh(u)
-    a = Audit(user=current_user.username, action="update_user", target=u.username, result="success", timestamp=datetime.utcnow())
+    a = Audit(user=current_user.username, action="update_user", target=u.username, result="success", timestamp=tznow())
     db.add(a); db.commit()
     return UserOut(id=u.id, username=u.username, role=u.role, created_at=u.created_at)
     return UserOut(id=u.id, username=u.username, role=u.role, created_at=u.created_at)
@@ -86,6 +85,6 @@ def delete_user(user_id: int, db: Session = Depends(get_db), current_user=Depend
             raise HTTPException(status_code=400, detail="cannot delete last admin")
     db.delete(u)
     db.commit()
-    a = Audit(user=current_user.username, action="delete_user", target=u.username, result="success", timestamp=datetime.utcnow())
+    a = Audit(user=current_user.username, action="delete_user", target=u.username, result="success", timestamp=tznow())
     db.add(a); db.commit()
     return {"deleted": True}

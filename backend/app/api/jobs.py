@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from ..database import SessionLocal
 from ..models import Device, Job, Backup
 from ..utils.crypto import dec
+from ..utils.timeutil import tznow
 from ..services.netmiko_worker import fetch_running_config
 from ..services.job_controller import submit
 from hashlib import sha256
@@ -78,7 +79,7 @@ async def run_manual(db: Session = Depends(get_db), current_user=Depends(require
             
             job.status = "success"
             job.devices = ok
-            job.finished_at = datetime.utcnow()
+            job.finished_at = tznow()
             job.log = "\n".join(log_lines)
             db.commit()
             
@@ -160,7 +161,7 @@ def cancel_job(job_id: int, db: Session = Depends(get_db), current_user=Depends(
         return {"ok": False, "detail": "job not running"}
     j.status = 'failed'
     from datetime import datetime
-    j.finished_at = datetime.utcnow()
+    j.finished_at = tznow()
     db.commit()
     audit_event(user=current_user.username, action="job_cancel", target=f"job#{job_id}", result="success")
     return {"ok": True}

@@ -23,6 +23,8 @@ interface Schedule {
   runAt?: string;
   target_type?: string;
   targetType?: string;
+  target_tags?: string;
+  targetTags?: string;
   retention?: number;
   notify_on_fail?: boolean;
   notifyOnFail?: boolean;
@@ -31,6 +33,7 @@ interface Schedule {
 
 export function SchedulesPage() {
   const [schedules, setSchedules] = useState<Schedule[]>([]);
+  const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [savingSchedule, setSavingSchedule] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
@@ -42,6 +45,7 @@ export function SchedulesPage() {
     intervalDays: 7,
     runAt: '02:00',
     targetType: 'All',
+    targetTags: '',
     retention: 10,
     notifyOnFail: true,
     enabled: true,
@@ -71,8 +75,18 @@ export function SchedulesPage() {
     }
   };
 
+  const fetchAvailableTags = async () => {
+    try {
+      const data = await apiGet<{ tags: string[] }>('/devices/tags/available');
+      setAvailableTags(data.tags || []);
+    } catch (err) {
+      console.error('Failed to load tags:', err);
+    }
+  };
+
   useEffect(() => {
     fetchSchedules();
+    fetchAvailableTags();
   }, []);
 
   const handleAddSchedule = () => {
@@ -82,6 +96,7 @@ export function SchedulesPage() {
       intervalDays: 7,
       runAt: '02:00',
       targetType: 'All',
+      targetTags: '',
       retention: 10,
       notifyOnFail: true,
       enabled: true,
@@ -96,6 +111,7 @@ export function SchedulesPage() {
       intervalDays: schedule.interval_days ?? schedule.intervalDays ?? 7,
       runAt: schedule.run_at ?? schedule.runAt ?? '02:00',
       targetType: schedule.target_type ?? schedule.targetType ?? 'All',
+      targetTags: schedule.target_tags ?? schedule.targetTags ?? '',
       retention: schedule.retention ?? 10,
       notifyOnFail: schedule.notify_on_fail ?? schedule.notifyOnFail ?? true,
       enabled: schedule.enabled,
@@ -114,13 +130,20 @@ export function SchedulesPage() {
       return;
     }
 
+    if (formData.targetType === 'Tag' && !formData.targetTags) {
+      toast.error('Please select at least one tag');
+      return;
+    }
+
     setSavingSchedule(true);
     try {
       const payload = {
-        device_id: undefined,
+        name: formData.name,
         schedule_time: formData.runAt,
         enabled: formData.enabled,
         interval_days: formData.intervalDays,
+        target_type: formData.targetType,
+        target_tags: formData.targetType === 'Tag' ? formData.targetTags : null,
       };
 
       if (editingSchedule) {
@@ -163,10 +186,12 @@ export function SchedulesPage() {
     try {
       const newEnabledState = !schedule.enabled;
       await apiPut(`/schedules/${schedule.id}`, {
-        device_id: undefined,
+        name: schedule.name,
         schedule_time: schedule.run_at ?? schedule.runAt ?? '02:00',
         enabled: newEnabledState,
         interval_days: schedule.interval_days ?? schedule.intervalDays ?? 7,
+        target_type: schedule.target_type ?? schedule.targetType,
+        target_tags: schedule.target_tags ?? schedule.targetTags,
       });
       toast.success(`Schedule ${newEnabledState ? 'enabled' : 'disabled'}`);
       await fetchSchedules();
@@ -232,14 +257,21 @@ export function SchedulesPage() {
                 const intervalDays = schedule.interval_days ?? schedule.intervalDays ?? 0;
                 const runAt = schedule.run_at ?? schedule.runAt ?? '';
                 const targetType = schedule.target_type ?? schedule.targetType ?? 'All';
+                const targetTags = schedule.target_tags ?? schedule.targetTags ?? '';
                 const retention = schedule.retention ?? 10;
+                
+                // Format target display
+                let targetDisplay = targetType;
+                if (targetType === 'Tag' && targetTags) {
+                  targetDisplay = `Tag: ${targetTags}`;
+                }
                 
                 return (
                   <TableRow key={schedule.id}>
                     <TableCell>{schedule.name}</TableCell>
                     <TableCell>{intervalDays}</TableCell>
                     <TableCell>{runAt}</TableCell>
-                    <TableCell>{targetType}</TableCell>
+                    <TableCell>{targetDisplay}</TableCell>
                     <TableCell>Keep {retention}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
@@ -353,20 +385,45 @@ export function SchedulesPage() {
               <Label htmlFor="targetType">Target Type</Label>
               <Select 
                 value={formData.targetType} 
-                onValueChange={(value) => setFormData({ ...formData, targetType: value })}
+                onValueChange={(value) => setFormData({ ...formData, targetType: value, targetTags: '' })}
               >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="All">All Devices</SelectItem>
-                  <SelectItem value="Tag: core">Tag: core</SelectItem>
-                  <SelectItem value="Tag: edge">Tag: edge</SelectItem>
-                  <SelectItem value="Tag: production">Tag: production</SelectItem>
-                  <SelectItem value="Devices">Specific Devices</SelectItem>
+                  <SelectItem value="Tag">Specific Tags</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+
+            {formData.targetType === 'Tag' && (
+              <div>
+                <Label htmlFor="targetTags">Select Tags</Label>
+                <Select 
+                  value={formData.targetTags} 
+                  onValueChange={(value) => setFormData({ ...formData, targetTags: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose a tag..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableTags.length === 0 ? (
+                      <SelectItem value="__no_tags__" disabled>No tags available</SelectItem>
+                    ) : (
+                      availableTags.map((tag) => (
+                        <SelectItem key={tag} value={tag}>
+                          {tag}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+                <p className="text-sm text-gray-500 mt-1">
+                  Backup devices with this tag
+                </p>
+              </div>
+            )}
 
             <div>
               <Label htmlFor="retention">Retention (keep last N backups)</Label>

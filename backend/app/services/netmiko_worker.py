@@ -97,7 +97,19 @@ def fetch_running_config(*, vendor: str, host: str, username: str, password: str
         output = net_connect.send_command(cmd or "show running-config", read_timeout=60)
         print(f"✅ Backup konfigurasi berhasil ({len(output)} bytes)")
 
-        net_connect.disconnect()
+        # CRITICAL: Proper cleanup untuk Allied Telesis
+        print("Menutup koneksi dengan proper...")
+        try:
+            # Send exit command explicitly before disconnect
+            net_connect.send_command_timing("exit")
+        except:
+            pass
+        
+        try:
+            net_connect.disconnect()
+        except:
+            pass
+        
         print("✓ Koneksi ditutup.\n")
 
         # Hapus session log kalau sukses
@@ -115,6 +127,15 @@ def fetch_running_config(*, vendor: str, host: str, username: str, password: str
         print(f"   Error: {error_msg}")
         print("\nTraceback:")
         print(traceback_str)
+
+        # CRITICAL: Force cleanup connection on error
+        try:
+            if 'net_connect' in locals():
+                print("⚠️  Force closing connection after error...")
+                net_connect.send_command_timing("exit")
+                net_connect.disconnect()
+        except:
+            pass
 
         # Otomatis print session log kalau ada - INI KUNCI untuk debug!
         try:

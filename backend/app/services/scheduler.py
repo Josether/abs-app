@@ -56,8 +56,15 @@ def run_scheduled_backup(schedule_id: int, schedule_name: str):
                 ok += 1
                 db.commit()
                 log_lines.append(f"[{d.hostname}] Backup success ({len(content)} bytes, path={path})")
+                
+                # CRITICAL: Delay antar device untuk Allied Telesis (rate limiting)
+                await asyncio.sleep(3)  # Wait 3 seconds before next device
+                log_lines.append(f"[{d.hostname}] Waiting 3s before next device...")
+                
             except Exception as e:
                 log_lines.append(f"[{d.hostname}] Backup failed: {str(e)}")
+                # Also wait on error to prevent rapid failed attempts
+                await asyncio.sleep(2)
         
         # Update job status
         job.status = "success"

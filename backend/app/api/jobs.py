@@ -84,12 +84,18 @@ async def run_manual(db: Session = Depends(get_db), current_user=Depends(require
                     await asyncio.sleep(2)
         
         from datetime import datetime
-        job.status = "success"; job.devices = ok
-        job.finished_at = datetime.utcnow()
-        log_lines.append(f"Job completed: {ok}/{len(devices)} successful")
-        job.log = "\n".join(log_lines)
-        db.commit()
-        audit_event(user=current_user.username, action="job_run_manual", target=f"job#{job.id}", result=f"success ({ok}/{len(devices)} devices)")
+        log_lines.append(f"Job completed: {ok}/{len(device_list)} successful")
+        
+        # Re-query job to avoid DetachedInstanceError
+        job = db.query(Job).filter_by(id=job.id).first()
+        if job:
+            job.status = "success"
+            job.devices = ok
+            job.finished_at = datetime.utcnow()
+            job.log = "\n".join(log_lines)
+            db.commit()
+        
+        audit_event(user=current_user.username, action="job_run_manual", target=f"job#{job.id}", result=f"success ({ok}/{len(device_list)} devices)")
     await submit(task)
     return {"queued": True}
 

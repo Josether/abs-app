@@ -88,20 +88,23 @@ async def run_scheduled_backup(schedule_id: int, schedule_name: str):
                 if idx < len(device_list) - 1:
                     await asyncio.sleep(2)
         
-        # Update job status
-        job.status = "success"
-        job.devices = ok
-        job.finished_at = datetime.utcnow()
-        log_lines.append(f"Job completed: {ok}/{len(devices)} successful")
-        job.log = "\n".join(log_lines)
-        db.commit()
+        # Re-query job to avoid DetachedInstanceError
+        log_lines.append(f"Job completed: {ok}/{len(device_list)} successful")
+        
+        job = db.query(Job).filter_by(id=job.id).first()
+        if job:
+            job.status = "success"
+            job.devices = ok
+            job.finished_at = datetime.utcnow()
+            job.log = "\n".join(log_lines)
+            db.commit()
         
         # Audit log
         audit_event(
             user="system",
             action="job_run_scheduled",
             target=f"schedule:{schedule_name}",
-            result=f"success ({ok}/{len(devices)} devices)"
+            result=f"success ({ok}/{len(device_list)} devices)"
         )
         
     except Exception as e:

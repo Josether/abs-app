@@ -19,84 +19,101 @@ def get_db():
 
 @router.post("/run/manual")
 async def run_manual(db: Session = Depends(get_db), current_user=Depends(require_admin)):
-    async def task():
-        job = Job(triggered_by="manual", status="running"); db.add(job); db.commit(); db.refresh(job)
-        devices = db.query(Device).filter_by(enabled=True).all()
-        log_lines = []
-        ok = 0
-        
-        log_lines.append(f"Job started at {job.started_at.isoformat()}")
-        log_lines.append(f"Processing {len(devices)} enabled device(s)...")
-        audit_event(user=current_user.username, action="job_run_manual", target=f"job#{job.id}", result="started")
-        
-        # Extract device info to avoid SQLAlchemy detached instance errors
-        device_list = []
-        for d in devices:
-            device_list.append({
-                'id': d.id,
-                'hostname': d.hostname,
-                'ip': d.ip,
-                'vendor': d.vendor,
-                'protocol': d.protocol,
-                'port': d.port,
-                'username_enc': d.username_enc,
-                'password_enc': d.password_enc,
-                'secret_enc': d.secret_enc,
-            })
-        
-        ok = 0
-        for idx, device_info in enumerate(device_list):
-            try:
-                log_lines.append(f"[{device_info['hostname']}] Connecting to {device_info['ip']}...")
-                
-                # Fetch running config
-                path, content = fetch_running_config(
-                    vendor=device_info['vendor'], 
-                    host=device_info['ip'], 
-                    username=dec(device_info['username_enc']),
-                    password=dec(device_info['password_enc']), 
-                    secret=dec(device_info['secret_enc']) if device_info['secret_enc'] else None,
-                    protocol=device_info['protocol'], 
-                    port=device_info['port']
-                )
-                
-                # Save backup record
-                b = Backup(
-                    device_id=device_info['id'], 
-                    size_bytes=len(content),
-                    hash=sha256(content).hexdigest()[:8], 
-                    path=str(path)
-                )
-                db.add(b)
-                ok += 1
-                db.commit()
-                log_lines.append(f"[{device_info['hostname']}] Backup success ({len(content)} bytes, path={path})")
-                
-                # CRITICAL: Delay antar device untuk Allied Telesis (rate limiting)
-                if idx < len(device_list) - 1:  # Not the last device
-                    log_lines.append(f"[{device_info['hostname']}] Waiting 3s before next device...")
-                    await asyncio.sleep(3)
-                
-            except Exception as e:
-                log_lines.append(f"[{device_info['hostname']}] Backup failed: {str(e)}")
-                # Also wait on error to prevent rapid failed attempts
-                if idx < len(device_list) - 1:
-                    await asyncio.sleep(2)
-        
-        from datetime import datetime
-        log_lines.append(f"Job completed: {ok}/{len(device_list)} successful")
-        
-        # Re-query job to avoid DetachedInstanceError
-        job = db.query(Job).filter_by(id=job.id).first()
-        if job:
+    async def task(job_id: int, device_list: list[dict]):
+        """Background task - receives job_id and device dicts, NOT ORM objects"""
+        db = SessionLocal()
+        try:
+            # Re-query job with fresh session
+            job = db.query(Job).filter(Job.id == job_id).first()
+            if not job:
+                print(f"[ERROR] Job {job_id} not found in database")
+                return
+            
+            log_lines = []
+            ok = 0
+            
+            log_lines.append(f"Job started at {job.started_at.isoformat()}")
+            log_lines.append(f"Processing {len(device_list)} enabled device(s)...")
+            
+            for idx, device_info in enumerate(device_list):
+                try:
+                    log_lines.append(f"[{device_info['hostname']}] Connecting to {device_info['ip']}...")
+                    
+                    # Fetch running config
+                    path, content = fetch_running_config(
+                        vendor=device_info['vendor'], 
+                        host=device_info['ip'], 
+                        username=device_info['username'],
+                        password=device_info['password'], 
+                        secret=device_info['secret'],
+                        protocol=device_info['protocol'], 
+                        port=device_info['port']
+                    )
+                    
+                    # Save backup record
+                    b = Backup(
+                        device_id=device_info['id'], 
+                        size_bytes=len(content),
+                        hash=sha256(content).hexdigest()[:8], 
+                        path=str(path)
+                    )
+                    db.add(b)
+                    ok += 1
+                    db.commit()
+                    log_lines.append(f"[{device_info['hostname']}] Backup success ({len(content)} bytes, path={path})")
+                    
+                    # Delay between devices (rate limiting)
+                    if idx < len(device_list) - 1:
+                        log_lines.append(f"[{device_info['hostname']}] Waiting 3s before next device...")
+                        await asyncio.sleep(3)
+                    
+                except Exception as e:
+                    log_lines.append(f"[{device_info['hostname']}] Backup failed: {str(e)}")
+                    if idx < len(device_list) - 1:
+                        await asyncio.sleep(2)
+            
+            # Update job status
+            from datetime import datetime
+            log_lines.append(f"Job completed: {ok}/{len(device_list)} successful")
+            
             job.status = "success"
             job.devices = ok
             job.finished_at = datetime.utcnow()
             job.log = "\n".join(log_lines)
             db.commit()
-        
-        audit_event(user=current_user.username, action="job_run_manual", target=f"job#{job.id}", result=f"success ({ok}/{len(device_list)} devices)")
-    await submit(task)
+            
+            audit_event(user=current_user.username, action="job_run_manual", target=f"job#{job_id}", result=f"success ({ok}/{len(device_list)} devices)")
+            
+        finally:
+            db.close()
+    
+    # Create job record
+    job = Job(triggered_by="manual", status="running")
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    
+    # Get devices and extract to plain dicts
+    devices = db.query(Device).filter_by(enabled=True).all()
+    device_list = []
+    for d in devices:
+        device_list.append({
+            'id': d.id,
+            'hostname': d.hostname,
+            'ip': d.ip,
+            'vendor': d.vendor,
+            'protocol': d.protocol,
+            'port': d.port,
+            'username': dec(d.username_enc),
+            'password': dec(d.password_enc),
+            'secret': dec(d.secret_enc) if d.secret_enc else None,
+        })
+    
+    audit_event(user=current_user.username, action="job_run_manual", target=f"job#{job.id}", result="started")
+    
+    # Submit task with job_id (not job object!) and device dicts
+    await submit(lambda: task(job.id, device_list))
+    
     return {"queued": True}
 
 

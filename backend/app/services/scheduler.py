@@ -30,6 +30,8 @@ async def run_scheduled_backup(schedule_id: int, schedule_name: str):
         db.commit()
         db.refresh(job)
         
+        job_id = job.id  # Extract job_id before session operations
+        
         log_lines = []
         log_lines.append(f"Scheduled job started at {job.started_at.isoformat()}")
         log_lines.append(f"Schedule: {schedule_name}")
@@ -38,7 +40,7 @@ async def run_scheduled_backup(schedule_id: int, schedule_name: str):
         devices = db.query(Device).filter_by(enabled=True).all()
         log_lines.append(f"Processing {len(devices)} enabled device(s)...")
         
-        # Extract device info to avoid SQLAlchemy detached instance errors
+        # Extract device info with decrypted credentials
         device_list = []
         for d in devices:
             device_list.append({
@@ -48,9 +50,9 @@ async def run_scheduled_backup(schedule_id: int, schedule_name: str):
                 'vendor': d.vendor,
                 'protocol': d.protocol,
                 'port': d.port,
-                'username_enc': d.username_enc,
-                'password_enc': d.password_enc,
-                'secret_enc': d.secret_enc,
+                'username': dec(d.username_enc),
+                'password': dec(d.password_enc),
+                'secret': dec(d.secret_enc) if d.secret_enc else None,
             })
         
         ok = 0
@@ -60,9 +62,9 @@ async def run_scheduled_backup(schedule_id: int, schedule_name: str):
                 path, content = fetch_running_config(
                     vendor=device_info['vendor'], 
                     host=device_info['ip'], 
-                    username=dec(device_info['username_enc']),
-                    password=dec(device_info['password_enc']), 
-                    secret=dec(device_info['secret_enc']) if device_info['secret_enc'] else None,
+                    username=device_info['username'],
+                    password=device_info['password'], 
+                    secret=device_info['secret'],
                     protocol=device_info['protocol'], 
                     port=device_info['port']
                 )
@@ -77,21 +79,20 @@ async def run_scheduled_backup(schedule_id: int, schedule_name: str):
                 db.commit()
                 log_lines.append(f"[{device_info['hostname']}] Backup success ({len(content)} bytes, path={path})")
                 
-                # CRITICAL: Delay antar device untuk Allied Telesis (rate limiting)
-                if idx < len(device_list) - 1:  # Not the last device
+                # Delay between devices (rate limiting)
+                if idx < len(device_list) - 1:
                     log_lines.append(f"[{device_info['hostname']}] Waiting 3s before next device...")
                     await asyncio.sleep(3)
                 
             except Exception as e:
                 log_lines.append(f"[{device_info['hostname']}] Backup failed: {str(e)}")
-                # Also wait on error to prevent rapid failed attempts
                 if idx < len(device_list) - 1:
                     await asyncio.sleep(2)
         
-        # Re-query job to avoid DetachedInstanceError
+        # Update job status - re-query to avoid detached instance
         log_lines.append(f"Job completed: {ok}/{len(device_list)} successful")
         
-        job = db.query(Job).filter_by(id=job.id).first()
+        job = db.query(Job).filter_by(id=job_id).first()
         if job:
             job.status = "success"
             job.devices = ok

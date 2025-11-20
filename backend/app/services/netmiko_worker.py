@@ -50,90 +50,87 @@ def _device_type(vendor: str, protocol: str) -> str:
 
 def fetch_running_config(*, vendor: str, host: str, username: str, password: str, secret: str | None, protocol: str, port: int, cmd: str | None=None) -> tuple[str, bytes]:
     """
-    Connect to network device and fetch running configuration using Netmiko.
-    EXACT PATTERN from working script - use send_command_timing for enable!
+    Connect ke perangkat jaringan dan ambil running config pakai Netmiko.
+    Dibikin PERSIS SAMA dengan backup_switch_config.py yang sudah terbukti jalan.
     """
-    import time
     import tempfile
     import os
-    
+    import traceback
+
     device_type = _device_type(vendor, protocol)
-    
-    # Create session log file
+
+    # Session log untuk debug kalau gagal
     session_log = os.path.join(tempfile.gettempdir(), f"netmiko_{host}.log")
-    
-    # Build device dict - EXACTLY like working script (simple, no secret in dict!)
+
+    # PERSIS SAMA dengan script lama: include secret dan pakai enable()
     device = {
         "device_type": device_type,
         "host": host,
         "username": username,
         "password": password,
+        "secret": secret,          # ⬅️ CRITICAL: Must include like working script!
         "port": port,
-        "session_log": session_log,  # Enable session logging
+        "session_log": session_log,
+        "fast_cli": False,         # Telnet lebih stabil dengan fast_cli=False
     }
-    
+
     print(f"\n{'='*60}")
-    print(f"NETMIKO CONNECTION (EXACT WORKING PATTERN):")
-    print(f"  Device Type: {device_type}")
-    print(f"  Host: {host}:{port}")
-    print(f"  Username: {username}")
+    print("NETMIKO CONNECTION (MIRROR LEGACY SCRIPT):")
+    print(f"  Device Type : {device_type}")
+    print(f"  Host        : {host}:{port}")
+    print(f"  Username    : {username}")
+    print(f"  Secret      : {'***' if secret else 'None'}")
     print(f"{'='*60}\n")
-    
+
     try:
-        # Connect - EXACTLY like working script
         print(f"Mencoba terhubung ke {host}...")
         net_connect = ConnectHandler(**device)
         print("✓ Koneksi berhasil!")
-        
-        # Enable mode - EXACTLY like working script (use send_command_timing, NOT enable()!)
+
+        # Enable PERSIS seperti script lama - JANGAN pakai send_command_timing!
         if secret:
-            print("Memasuki mode privileged...")
-            net_connect.send_command_timing("enable")
-            time.sleep(1)
-            net_connect.send_command_timing(secret)
-            time.sleep(1)
+            print("Memasuki mode privileged (enable)...")
+            net_connect.enable()
             print("✓ Berhasil masuk ke mode privileged.")
-        
-        # Fetch config - EXACTLY like working script
+
         print("Mengambil konfigurasi...")
         output = net_connect.send_command(cmd or "show running-config", read_timeout=60)
         print(f"✅ Backup konfigurasi berhasil ({len(output)} bytes)")
-        
-        # Disconnect
+
         net_connect.disconnect()
         print("✓ Koneksi ditutup.\n")
-        
-        # Clean up session log on success
+
+        # Hapus session log kalau sukses
         try:
             if os.path.exists(session_log):
                 os.remove(session_log)
-        except:
+        except Exception:
             pass
-        
+
     except Exception as e:
-        import traceback
         error_msg = str(e)
         traceback_str = traceback.format_exc()
-        
-        print(f"\n❌ NETMIKO ERROR:")
+
+        print("\n❌ NETMIKO ERROR:")
         print(f"   Error: {error_msg}")
-        print(f"\nTraceback:")
+        print("\nTraceback:")
         print(traceback_str)
-        
-        # Auto-print session log if error occurs
+
+        # Otomatis print session log kalau ada - INI KUNCI untuk debug!
         try:
             if os.path.exists(session_log):
-                with open(session_log, 'r', encoding='utf-8', errors='ignore') as f:
+                with open(session_log, "r", encoding="utf-8", errors="ignore") as f:
                     log_content = f.read()
-                print(f"\n📋 NETMIKO SESSION LOG:")
-                print(f"{'='*60}")
+                print("\n📋 NETMIKO SESSION LOG (RAW TELNET DIALOG):")
+                print("=" * 60)
                 print(log_content)
-                print(f"{'='*60}\n")
-                # Clean up log file
+                print("=" * 60)
+                print("\n⚠️  Analisa log di atas untuk lihat prompt/banner yang muncul!")
                 os.remove(session_log)
         except Exception as log_err:
-            print(f"Could not read session log: {log_err}")
-        
+            print(f"Tidak bisa baca session log: {log_err}")
+
+        # Lempar error ke caller
         raise Exception(f"Connection failed: {host} | Error: {error_msg}")
     
     # Save to file

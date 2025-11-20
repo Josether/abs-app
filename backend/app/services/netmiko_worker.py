@@ -53,6 +53,12 @@ def fetch_running_config(*, vendor: str, host: str, username: str, password: str
     Matches the exact pattern from the original working Python script.
     """
     device_type = _device_type(vendor, protocol)
+    
+    # DEBUG: Log what we're trying to connect with
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"Attempting connection: host={host}, user={username}, password_len={len(password)}, device_type={device_type}, port={port}")
+    
     device = {
         "device_type": device_type,
         "host": host, 
@@ -84,6 +90,7 @@ def fetch_running_config(*, vendor: str, host: str, username: str, password: str
     except Exception as e:
         # Re-raise with more context for debugging
         error_msg = str(e)
+        logger.error(f"Connection failed to {host}: {error_msg}")
         raise Exception(f"Connection failed: {host} | device_type={device_type}, port={port}, user={username} | Error: {error_msg}")
     
     # Save to file

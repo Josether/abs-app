@@ -71,9 +71,21 @@ def test_device(device_id: int, db: Session = Depends(get_db), current_user=Depe
     d = db.get(Device, device_id)
     if not d: raise HTTPException(404, "Not found")
     try:
+        # DEBUG: Decrypt and log credentials (REMOVE IN PRODUCTION!)
+        decrypted_user = dec(d.username_enc)
+        decrypted_pass = dec(d.password_enc)
+        decrypted_secret = dec(d.secret_enc) if d.secret_enc else None
+        
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"TEST CONNECTION DEBUG - Host: {d.ip}")
+        logger.info(f"  Username: '{decrypted_user}' (len={len(decrypted_user)})")
+        logger.info(f"  Password: '{decrypted_pass}' (len={len(decrypted_pass)})")
+        logger.info(f"  Secret: '{decrypted_secret}' (len={len(decrypted_secret) if decrypted_secret else 0})")
+        
         fetch_running_config(
-            vendor=d.vendor, host=d.ip, username=dec(d.username_enc),
-            password=dec(d.password_enc), secret=dec(d.secret_enc) if d.secret_enc else None,
+            vendor=d.vendor, host=d.ip, username=decrypted_user,
+            password=decrypted_pass, secret=decrypted_secret,
             protocol=d.protocol, port=d.port, cmd="show version"
         )
         audit_event(user=current_user.username, action="device_test", target=d.hostname, result="success")

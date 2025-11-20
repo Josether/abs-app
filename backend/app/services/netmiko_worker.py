@@ -54,10 +54,11 @@ def fetch_running_config(*, vendor: str, host: str, username: str, password: str
     """
     device_type = _device_type(vendor, protocol)
     
-    # DEBUG: Log what we're trying to connect with
+    # DEBUG: Enable verbose Netmiko logging
     import logging
-    logger = logging.getLogger(__name__)
-    logger.info(f"Attempting connection: host={host}, user={username}, password_len={len(password)}, device_type={device_type}, port={port}")
+    logging.basicConfig()
+    logger = logging.getLogger("netmiko")
+    logger.setLevel(logging.DEBUG)
     
     device = {
         "device_type": device_type,
@@ -65,32 +66,39 @@ def fetch_running_config(*, vendor: str, host: str, username: str, password: str
         "username": username, 
         "password": password, 
         "port": port,
-        "global_delay_factor": 2,  # Increase timing for slow devices (Allied Telesis)
-        "timeout": 30,  # Connection timeout
-        "session_timeout": 60,  # Session timeout
+        "global_delay_factor": 4,  # Increase even more for Allied Telesis
+        "timeout": 60,  # Longer connection timeout
+        "session_timeout": 90,  # Longer session timeout
+        "auth_timeout": 30,  # Authentication timeout
+        "banner_timeout": 30,  # Banner timeout
     }
     
-    # DO NOT add secret to device dict - we'll call enable() manually after connection
-    # This matches the original script pattern
+    print(f"\n{'='*60}")
+    print(f"NETMIKO CONNECTION ATTEMPT:")
+    print(f"  Device Type: {device_type}")
+    print(f"  Host: {host}:{port}")
+    print(f"  Username: {username}")
+    print(f"  Password: {password}")
+    print(f"  Secret: {secret}")
+    print(f"{'='*60}\n")
     
     try:
-        # Connect to device (same as: net_connect = ConnectHandler(**device))
+        # Connect to device
         net_connect = ConnectHandler(**device)
         
-        # Enter privileged mode (same as: net_connect.enable())
+        # Enter privileged mode
         if secret:
             net_connect.enable()
         
-        # Fetch configuration (same as: output = net_connect.send_command("show running-config"))
+        # Fetch configuration
         output = net_connect.send_command(cmd or "show running-config", read_timeout=60)
         
         # Disconnect
         net_connect.disconnect()
         
     except Exception as e:
-        # Re-raise with more context for debugging
         error_msg = str(e)
-        logger.error(f"Connection failed to {host}: {error_msg}")
+        print(f"\nNETMIKO ERROR: {error_msg}\n")
         raise Exception(f"Connection failed: {host} | device_type={device_type}, port={port}, user={username} | Error: {error_msg}")
     
     # Save to file

@@ -59,6 +59,9 @@ def fetch_running_config(*, vendor: str, host: str, username: str, password: str
         "username": username, 
         "password": password, 
         "port": port,
+        "global_delay_factor": 2,  # Increase timing for slow devices (Allied Telesis)
+        "timeout": 30,  # Connection timeout
+        "session_timeout": 60,  # Session timeout
     }
     
     # DO NOT add secret to device dict - we'll call enable() manually after connection
@@ -80,7 +83,8 @@ def fetch_running_config(*, vendor: str, host: str, username: str, password: str
         
     except Exception as e:
         # Re-raise with more context for debugging
-        raise Exception(f"Login failed: {host} (device_type={device_type}, port={port}, user={username})") from e
+        error_msg = str(e)
+        raise Exception(f"Connection failed: {host} | device_type={device_type}, port={port}, user={username} | Error: {error_msg}")
     
     # Save to file
     content = output.encode()

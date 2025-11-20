@@ -12,8 +12,9 @@ VENDOR_MAP = {
     "Cisco (NXOS Data Center)": "cisco_nxos",
     "Cisco (WLC Controller)": "cisco_wlc_ssh",
     
-    # Allied Telesis
-    "Allied Telesis (AWPlus)": "allied_telesis_awplus",
+    # Allied Telesis - CRITICAL: Use cisco_ios template (more compatible than allied_telesis_awplus)
+    # Allied Telesis switches are Cisco-compatible and work better with cisco_ios driver
+    "Allied Telesis (AWPlus)": "cisco_ios",
     
     # Aruba devices
     "Aruba (AOS-CX Switch)": "aruba_aoscx",
@@ -49,64 +50,50 @@ def _device_type(vendor: str, protocol: str) -> str:
 
 def fetch_running_config(*, vendor: str, host: str, username: str, password: str, secret: str | None, protocol: str, port: int, cmd: str | None=None) -> tuple[str, bytes]:
     """
-    Connect to network device and fetch running configuration.
-    Using telnetlib (proven working) instead of Netmiko for Allied Telesis switches.
+    Connect to network device and fetch running configuration using Netmiko.
+    SIMPLIFIED to match working script - NO extra parameters!
     """
+    device_type = _device_type(vendor, protocol)
+    
+    # Build device dict - EXACTLY like working script (simple, no extras!)
+    device = {
+        "device_type": device_type,
+        "host": host,
+        "username": username,
+        "password": password,
+        "secret": secret,
+        "port": port,
+    }
+    
+    print(f"\n{'='*60}")
+    print(f"NETMIKO CONNECTION (SIMPLIFIED):")
+    print(f"  Device Type: {device_type}")
+    print(f"  Host: {host}:{port}")
+    print(f"  Username: {username}")
+    print(f"  Secret: {secret}")
+    print(f"{'='*60}\n")
+    
     try:
-        import telnetlib
-        import time
+        # Connect - EXACTLY like working script
+        print(f"Mencoba terhubung ke {host}...")
+        net_connect = ConnectHandler(**device)
+        print("Koneksi berhasil!")
         
-        # Connect to device
-        tn = telnetlib.Telnet(host, port, timeout=30)
-        time.sleep(1)
+        # Enable - EXACTLY like working script
+        net_connect.enable()
+        print("Berhasil masuk ke mode privileged.")
         
-        # Wait for login prompt and send username
-        tn.read_until(b"login:", timeout=10)
-        tn.write(username.encode('ascii') + b"\n")
-        time.sleep(1)
+        # Fetch config - EXACTLY like working script
+        output = net_connect.send_command(cmd or "show running-config")
+        print(f"✅ Backup konfigurasi berhasil ({len(output)} bytes)")
         
-        # Wait for password prompt and send password
-        tn.read_until(b"Password:", timeout=10)
-        tn.write(password.encode('ascii') + b"\n")
-        time.sleep(2)
-        
-        # Enter enable mode if secret provided
-        if secret:
-            tn.write(b"enable\n")
-            time.sleep(1)
-            tn.read_until(b"Password:", timeout=10)
-            tn.write(secret.encode('ascii') + b"\n")
-            time.sleep(2)
-        
-        # Disable paging
-        tn.write(b"terminal length 0\n")
-        time.sleep(1)
-        tn.read_very_eager()  # Clear buffer
-        
-        # Send command to get config
-        command = cmd or "show running-config"
-        tn.write(command.encode('ascii') + b"\n")
-        time.sleep(5)  # Wait for command output
-        
-        # Read all output
-        output = tn.read_very_eager().decode('ascii', errors='ignore')
-        
-        # Exit and close
-        tn.write(b"exit\n")
-        time.sleep(1)
-        tn.close()
-        
-        # Clean up output - remove command echo and prompt
-        lines = output.split('\n')
-        # Remove first line (command echo) and filter out prompts
-        config_lines = [line for line in lines[1:] if not line.endswith('#') and not line.endswith('>')]
-        output = '\n'.join(config_lines)
-        
-        if len(output) < 50:
-            raise Exception(f"Output too short ({len(output)} bytes) - may have failed to get config")
+        # Disconnect
+        net_connect.disconnect()
+        print("Koneksi ditutup.")
         
     except Exception as e:
         error_msg = str(e)
+        print(f"❌ Terjadi kesalahan: {error_msg}")
         raise Exception(f"Connection failed: {host} | Error: {error_msg}")
     
     # Save to file

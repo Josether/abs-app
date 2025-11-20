@@ -13,5 +13,9 @@ def _get_key() -> bytes:
 
 f = Fernet(_get_key())
 
-def enc(s: str) -> str: return f.encrypt(s.encode()).decode()
-def dec(s: str) -> str: return f.decrypt(s.encode()).decode()
+# TEMPORARY: Disable encryption for debugging
+def enc(s: str) -> str: 
+    return s  # No encryption - store plaintext
+    
+def dec(s: str) -> str: 
+    return s  # No decryption - return as-is

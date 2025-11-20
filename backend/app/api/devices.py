@@ -71,17 +71,21 @@ def test_device(device_id: int, db: Session = Depends(get_db), current_user=Depe
     d = db.get(Device, device_id)
     if not d: raise HTTPException(404, "Not found")
     try:
-        # DEBUG: Decrypt and log credentials (REMOVE IN PRODUCTION!)
+        # DEBUG: Decrypt and print credentials
         decrypted_user = dec(d.username_enc)
         decrypted_pass = dec(d.password_enc)
         decrypted_secret = dec(d.secret_enc) if d.secret_enc else None
         
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.info(f"TEST CONNECTION DEBUG - Host: {d.ip}")
-        logger.info(f"  Username: '{decrypted_user}' (len={len(decrypted_user)})")
-        logger.info(f"  Password: '{decrypted_pass}' (len={len(decrypted_pass)})")
-        logger.info(f"  Secret: '{decrypted_secret}' (len={len(decrypted_secret) if decrypted_secret else 0})")
+        # PRINT to stdout (akan muncul di docker logs)
+        print(f"\n{'='*60}")
+        print(f"TEST CONNECTION DEBUG - Host: {d.ip}")
+        print(f"  Username: '{decrypted_user}' (len={len(decrypted_user)})")
+        print(f"  Password: '{decrypted_pass}' (len={len(decrypted_pass)})")
+        print(f"  Secret: '{decrypted_secret}' (len={len(decrypted_secret) if decrypted_secret else 0})")
+        print(f"  Vendor: {d.vendor}")
+        print(f"  Protocol: {d.protocol}")
+        print(f"  Port: {d.port}")
+        print(f"{'='*60}\n")
         
         fetch_running_config(
             vendor=d.vendor, host=d.ip, username=decrypted_user,
@@ -91,5 +95,6 @@ def test_device(device_id: int, db: Session = Depends(get_db), current_user=Depe
         audit_event(user=current_user.username, action="device_test", target=d.hostname, result="success")
         return TestResult(success=True, message="OK")
     except Exception as e:
+        print(f"\nERROR: {str(e)}\n")
         audit_event(user=current_user.username, action="device_test", target=d.hostname, result=f"failed: {str(e)}")
         return TestResult(success=False, message=f"Failed: {e}")

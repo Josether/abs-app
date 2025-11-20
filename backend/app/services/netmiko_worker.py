@@ -49,11 +49,24 @@ def _device_type(vendor: str, protocol: str) -> str:
 
 def fetch_running_config(*, vendor: str, host: str, username: str, password: str, secret: str | None, protocol: str, port: int, cmd: str | None=None) -> tuple[str, bytes]:
     """
-    Connect to network device and fetch running configuration.
-    TEMPORARY: Using telnetlib instead of Netmiko for debugging.
+    Connect to network device and fetch running configuration using Netmiko.
+    MATCHES EXACT PATTERN FROM WORKING SCRIPT - secret MUST be in device dict!
     """
+    device_type = _device_type(vendor, protocol)
+    
+    # Build device dict - CRITICAL: Include secret here, not passed to enable()
+    device = {
+        "device_type": device_type,
+        "host": host, 
+        "username": username, 
+        "password": password,
+        "secret": secret,  # ← CRITICAL: Must be here for enable() to work!
+        "port": port,
+    }
+    
     print(f"\n{'='*60}")
-    print(f"TELNETLIB CONNECTION ATTEMPT:")
+    print(f"NETMIKO CONNECTION (FIXED):")
+    print(f"  Device Type: {device_type}")
     print(f"  Host: {host}:{port}")
     print(f"  Username: {username}")
     print(f"  Password: {password}")
@@ -61,47 +74,25 @@ def fetch_running_config(*, vendor: str, host: str, username: str, password: str
     print(f"{'='*60}\n")
     
     try:
-        import telnetlib
-        import time
+        # Connect - same as working script: ConnectHandler(**device)
+        net_connect = ConnectHandler(**device)
+        print(f"Connected to {host}")
         
-        # Connect
-        tn = telnetlib.Telnet(host, port, timeout=30)
+        # Enable - same as working script: net_connect.enable()
+        # No parameter needed - Netmiko uses 'secret' from device dict
+        net_connect.enable()
+        print(f"Entered privileged mode on {host}")
         
-        # Wait for login prompt and send username
-        tn.read_until(b"login:", timeout=10)
-        tn.write(username.encode('ascii') + b"\n")
-        time.sleep(1)
+        # Fetch config
+        output = net_connect.send_command(cmd or "show running-config", read_timeout=60)
+        print(f"Got {len(output)} bytes from {host}")
         
-        # Wait for password prompt and send password
-        tn.read_until(b"Password:", timeout=10)
-        tn.write(password.encode('ascii') + b"\n")
-        time.sleep(2)
-        
-        # Enable mode if secret provided
-        if secret:
-            tn.write(b"enable\n")
-            time.sleep(1)
-            tn.read_until(b"Password:", timeout=5)
-            tn.write(secret.encode('ascii') + b"\n")
-            time.sleep(1)
-        
-        # Send command
-        command = cmd or "show running-config"
-        tn.write(command.encode('ascii') + b"\n")
-        time.sleep(3)
-        
-        # Read output
-        output = tn.read_very_eager().decode('ascii')
-        
-        # Close connection
-        tn.write(b"exit\n")
-        tn.close()
-        
-        print(f"SUCCESS! Got {len(output)} bytes of output\n")
+        # Disconnect
+        net_connect.disconnect()
         
     except Exception as e:
         error_msg = str(e)
-        print(f"\nTELNETLIB ERROR: {error_msg}\n")
+        print(f"\nNETMIKO ERROR: {error_msg}\n")
         raise Exception(f"Connection failed: {host} | Error: {error_msg}")
     
     # Save to file

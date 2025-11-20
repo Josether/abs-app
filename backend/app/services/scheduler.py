@@ -38,17 +38,36 @@ async def run_scheduled_backup(schedule_id: int, schedule_name: str):
         devices = db.query(Device).filter_by(enabled=True).all()
         log_lines.append(f"Processing {len(devices)} enabled device(s)...")
         
-        ok = 0
+        # Extract device info to avoid SQLAlchemy detached instance errors
+        device_list = []
         for d in devices:
+            device_list.append({
+                'id': d.id,
+                'hostname': d.hostname,
+                'ip': d.ip,
+                'vendor': d.vendor,
+                'protocol': d.protocol,
+                'port': d.port,
+                'username_enc': d.username_enc,
+                'password_enc': d.password_enc,
+                'secret_enc': d.secret_enc,
+            })
+        
+        ok = 0
+        for idx, device_info in enumerate(device_list):
             try:
-                log_lines.append(f"[{d.hostname}] Connecting to {d.ip}...")
+                log_lines.append(f"[{device_info['hostname']}] Connecting to {device_info['ip']}...")
                 path, content = fetch_running_config(
-                    vendor=d.vendor, host=d.ip, username=dec(d.username_enc),
-                    password=dec(d.password_enc), secret=dec(d.secret_enc) if d.secret_enc else None,
-                    protocol=d.protocol, port=d.port
+                    vendor=device_info['vendor'], 
+                    host=device_info['ip'], 
+                    username=dec(device_info['username_enc']),
+                    password=dec(device_info['password_enc']), 
+                    secret=dec(device_info['secret_enc']) if device_info['secret_enc'] else None,
+                    protocol=device_info['protocol'], 
+                    port=device_info['port']
                 )
                 b = Backup(
-                    device_id=d.id, 
+                    device_id=device_info['id'], 
                     size_bytes=len(content),
                     hash=sha256(content).hexdigest()[:8], 
                     path=str(path)
@@ -56,20 +75,18 @@ async def run_scheduled_backup(schedule_id: int, schedule_name: str):
                 db.add(b)
                 ok += 1
                 db.commit()
-                log_lines.append(f"[{d.hostname}] Backup success ({len(content)} bytes, path={path})")
+                log_lines.append(f"[{device_info['hostname']}] Backup success ({len(content)} bytes, path={path})")
                 
                 # CRITICAL: Delay antar device untuk Allied Telesis (rate limiting)
-                if len(devices) > 1:  # Only delay if multiple devices
-                    await asyncio.sleep(3)  # Wait 3 seconds before next device
-                    db.expire_all()  # Refresh all SQLAlchemy objects after async delay
-                    log_lines.append(f"[{d.hostname}] Waiting 3s before next device...")
+                if idx < len(device_list) - 1:  # Not the last device
+                    log_lines.append(f"[{device_info['hostname']}] Waiting 3s before next device...")
+                    await asyncio.sleep(3)
                 
             except Exception as e:
-                log_lines.append(f"[{d.hostname}] Backup failed: {str(e)}")
+                log_lines.append(f"[{device_info['hostname']}] Backup failed: {str(e)}")
                 # Also wait on error to prevent rapid failed attempts
-                if len(devices) > 1:
+                if idx < len(device_list) - 1:
                     await asyncio.sleep(2)
-                    db.expire_all()  # Refresh session
         
         # Update job status
         job.status = "success"

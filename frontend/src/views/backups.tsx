@@ -240,20 +240,20 @@ export function BackupsPage() {
 
       {/* Preview Modal */}
       <Dialog open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh]">
+        <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>
               {selectedBackup?.device_name ?? selectedBackup?.device_id} - {selectedBackup?.timestamp}
             </DialogTitle>
           </DialogHeader>
           
-          <div className="py-4">
-            <div className="bg-gray-900 text-gray-100 p-4 rounded-lg h-96 overflow-auto font-mono text-sm">
-              <pre>{selectedBackup?.content}</pre>
+          <div className="flex-1 overflow-hidden py-2">
+            <div className="bg-gray-900 text-gray-100 p-4 rounded-lg h-full overflow-auto font-mono text-sm">
+              <pre className="whitespace-pre-wrap break-words">{selectedBackup?.content}</pre>
             </div>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="mt-4">
             <Button 
               variant="outline"
               onClick={() => selectedBackup && handleDownload(selectedBackup)}

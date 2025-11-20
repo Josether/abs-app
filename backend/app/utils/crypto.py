@@ -13,9 +13,9 @@ def _get_key() -> bytes:
 
 f = Fernet(_get_key())
 
-# TEMPORARY: Disable encryption for debugging
+# TEMPORARY: Disable encryption for testing - will enable after all working
 def enc(s: str) -> str: 
-    return s  # No encryption - store plaintext
+    return s  # No encryption - store plaintext for testing
     
 def dec(s: str) -> str: 
     return s  # No decryption - return as-is

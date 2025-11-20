@@ -9,11 +9,12 @@ from .netmiko_worker import fetch_running_config
 from .audit_log import audit_event
 from hashlib import sha256
 import pytz
+import asyncio
 
 scheduler = AsyncIOScheduler(timezone=pytz.timezone(settings.TIMEZONE))
 
 
-def run_scheduled_backup(schedule_id: int, schedule_name: str):
+async def run_scheduled_backup(schedule_id: int, schedule_name: str):
     """
     Execute a scheduled backup job for a specific schedule.
     This function runs the actual backup logic.

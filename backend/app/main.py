@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .settings import settings
 from .database import Base, engine
-from .api import auth, devices, jobs, backups  # + users, schedules, audit (nanti)
+from .api import devices, jobs, backups
 from .services import scheduler
 from .routers import users as users_router, schedules as schedules_router, audit as audit_router, auth as auth_router
 

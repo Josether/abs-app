@@ -30,6 +30,39 @@ def _device_type_ssh(vendor: str) -> str:
     return VENDOR_MAP.get(vendor, "cisco_ios")
 
 
+def _get_config_command(vendor: str) -> str:
+    """Get the appropriate command to retrieve configuration based on vendor."""
+    vendor_lower = vendor.lower()
+    
+    # MikroTik uses /export
+    if "mikrotik" in vendor_lower:
+        return "/export"
+    
+    # Juniper uses show configuration
+    elif "juniper" in vendor_lower or "junos" in vendor_lower:
+        return "show configuration"
+    
+    # Fortinet uses show (without running-config)
+    elif "fortinet" in vendor_lower or "fortigate" in vendor_lower:
+        return "show"
+    
+    # Huawei uses display current-configuration
+    elif "huawei" in vendor_lower:
+        return "display current-configuration"
+    
+    # Aruba AOS-CX uses show running-config
+    elif "aruba" in vendor_lower and "aoscx" in vendor_lower:
+        return "show running-config"
+    
+    # Aruba AOS uses show running-config
+    elif "aruba" in vendor_lower:
+        return "show running-config"
+    
+    # Cisco and Allied Telesis (default)
+    else:
+        return "show running-config"
+
+
 def _read_all(tn, timeout=3):
     """Read until connection is idle for 'timeout' seconds. Handles large configs."""
     import time
@@ -168,7 +201,7 @@ def fetch_running_config(
             )
             
             # Send command to get config using telnetlib
-            command = cmd or "show running-config"
+            command = cmd or _get_config_command(vendor)
             tn.write(command.encode('ascii') + b"\n")
             import time
             time.sleep(2)  # Initial wait
@@ -217,7 +250,9 @@ def fetch_running_config(
                 session_log=session_log,
             )
             
-            output = conn.send_command(cmd or "show running-config", read_timeout=60)
+            # Get appropriate command for this vendor
+            config_cmd = cmd or _get_config_command(vendor)
+            output = conn.send_command(config_cmd, read_timeout=60)
 
     except Exception as e:
         error_msg = str(e)

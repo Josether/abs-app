@@ -23,8 +23,14 @@ export async function apiGet<T>(path: string, withAuth = true): Promise<T> {
   });
 
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || `GET ${path} failed (${res.status})`);
+    let errorMessage = `GET ${path} failed (${res.status})`;
+    try {
+      const errorData = await res.json();
+      errorMessage = errorData.detail || errorData.message || errorMessage;
+    } catch (e) {
+      // If JSON parsing fails, keep default message
+    }
+    throw new Error(errorMessage);
   }
 
   return res.json() as Promise<T>;
@@ -49,8 +55,14 @@ export async function apiPost<TReq, TRes>(
   });
 
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || `POST ${path} failed (${res.status})`);
+    let errorMessage = `POST ${path} failed (${res.status})`;
+    try {
+      const errorData = await res.json();
+      errorMessage = errorData.detail || errorData.message || errorMessage;
+    } catch (e) {
+      // If JSON parsing fails, keep default message
+    }
+    throw new Error(errorMessage);
   }
 
   return res.json() as Promise<TRes>;
@@ -69,8 +81,14 @@ export async function apiPut<TReq, TRes>(path: string, body: TReq, withAuth = tr
   });
 
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || `PUT ${path} failed (${res.status})`);
+    let errorMessage = `PUT ${path} failed (${res.status})`;
+    try {
+      const errorData = await res.json();
+      errorMessage = errorData.detail || errorData.message || errorMessage;
+    } catch (e) {
+      // If JSON parsing fails, keep default message
+    }
+    throw new Error(errorMessage);
   }
 
   return res.json() as Promise<TRes>;
@@ -85,9 +103,15 @@ export async function apiDelete(path: string, withAuth = true): Promise<void> {
     headers,
   });
 
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || `DELETE ${path} failed (${res.status})`);
+  iflet errorMessage = `DELETE ${path} failed (${res.status})`;
+    try {
+      const errorData = await res.json();
+      errorMessage = errorData.detail || errorData.message || errorMessage;
+    } catch (e) {
+      // If JSON parsing fails, keep default message
+    }
+    throw new Error(errorMessage); throw new Error(text || `DELETE ${path} failed (${res.status})`);
+    }
   }
 }
 

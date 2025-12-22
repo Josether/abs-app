@@ -1,0 +1,74 @@
+sequenceDiagram
+    actor Admin as Administrator
+    participant UI as Frontend UI
+    participant API as Backend API
+    participant Scheduler as APScheduler
+    participant DB as Database
+    participant Audit as Audit Log
+    
+    Admin->>UI: Buka menu Schedules
+    UI->>API: Request daftar jadwal
+    API->>DB: Ambil data jadwal
+    DB-->>API: Return schedule list
+    API-->>UI: Return schedules data
+    UI->>Admin: Tampilkan daftar jadwal backup
+    
+    alt Create Schedule
+        Admin->>UI: Klik Create Schedule
+        UI->>Admin: Tampilkan form pembuatan jadwal
+        Admin->>UI: Isi form jadwal
+        UI->>API: Kirim data jadwal baru
+        API->>DB: Simpan jadwal baru
+        DB-->>API: Schedule tersimpan
+        API->>Scheduler: Daftarkan jadwal otomatis
+        Scheduler-->>API: Jadwal terdaftar
+        API->>Audit: Log schedule_create
+        Audit->>DB: Simpan log audit
+        API-->>UI: Return sukses
+        UI->>Admin: Tampilkan jadwal berhasil dibuat
+        
+    else Edit Schedule
+        Admin->>UI: Klik Edit Schedule
+        UI->>Admin: Tampilkan form edit
+        Admin->>UI: Update data jadwal
+        UI->>API: Kirim perubahan data
+        API->>DB: Update jadwal
+        DB-->>API: Schedule terupdate
+        API->>Scheduler: Update jadwal otomatis
+        Scheduler-->>API: Jadwal terupdate
+        API->>Audit: Log schedule_update
+        Audit->>DB: Simpan log audit
+        API-->>UI: Return sukses
+        UI->>Admin: Tampilkan perubahan tersimpan
+        
+    else Delete Schedule
+        Admin->>UI: Klik Delete Schedule
+        UI->>API: Request hapus jadwal
+        API->>DB: Hapus jadwal
+        DB-->>API: Schedule dihapus
+        API->>Scheduler: Hapus dari scheduler
+        Scheduler-->>API: Jadwal dihapus
+        API->>Audit: Log schedule_delete
+        Audit->>DB: Simpan log audit
+        API-->>UI: Return sukses
+        UI->>Admin: Tampilkan jadwal berhasil dihapus
+        
+    else Toggle Enable/Disable
+        Admin->>UI: Klik Enable/Disable
+        UI->>API: Request toggle status
+        API->>DB: Update status jadwal
+        DB-->>API: Status terupdate
+        
+        alt Enable Schedule
+            API->>Scheduler: Aktifkan jadwal
+            Scheduler-->>API: Jadwal diaktifkan
+        else Disable Schedule
+            API->>Scheduler: Pause jadwal
+            Scheduler-->>API: Jadwal dipause
+        end
+        
+        API->>Audit: Log schedule_toggle
+        Audit->>DB: INSERT audit record
+        API-->>UI: Return success
+        UI->>Admin: Tampilkan status berhasil diubah
+    end

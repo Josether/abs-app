@@ -1,0 +1,46 @@
+graph TB
+    subgraph Administrator
+        A1(( ))
+        A2[Membuka menu Dashboard]
+        A3[Melihat ringkasan]
+        A4[Memilih menu<br/>Audit Logs]
+        A5[Menerapkan filter]
+        A6[Memilih detail log]
+        A7[Melihat detail]
+        A8(( ))
+    end
+    
+    subgraph Sistem
+        S1[Mengambil data dari database:<br/>devices, jobs, backups]
+        S2[Menampilkan status<br/>perangkat, job, backup]
+        S3[Query audit table]
+        S4[Menampilkan daftar<br/>log aktivitas]
+        S5[Filter data sesuai<br/>parameter]
+        S6[Menampilkan<br/>log filtered]
+        S7[Menampilkan<br/>detail log]
+    end
+    
+    %% Fase: Akses Dashboard
+    A1 --> A2
+    A2 --> S1
+    S1 --> S2
+    S2 --> A3
+    
+    %% Fase: Navigasi ke Audit Logs
+    A3 --> A4
+    A4 --> S3
+    S3 --> S4
+    
+    %% Fase: Filter Data
+    S4 --> A5
+    A5 --> S5
+    S5 --> S6
+    
+    %% Fase: Lihat Detail
+    S6 --> A6
+    A6 --> S7
+    S7 --> A7
+    A7 --> A8
+    
+    style A1 fill:#000
+    style A8 fill:#000

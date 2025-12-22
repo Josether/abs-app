@@ -103,15 +103,15 @@ export async function apiDelete(path: string, withAuth = true): Promise<void> {
     headers,
   });
 
-  iflet errorMessage = `DELETE ${path} failed (${res.status})`;
+  if (!res.ok) {
+    let errorMessage = `DELETE ${path} failed (${res.status})`;
     try {
       const errorData = await res.json();
       errorMessage = errorData.detail || errorData.message || errorMessage;
     } catch (e) {
       // If JSON parsing fails, keep default message
     }
-    throw new Error(errorMessage); throw new Error(text || `DELETE ${path} failed (${res.status})`);
-    }
+    throw new Error(errorMessage);
   }
 }
 

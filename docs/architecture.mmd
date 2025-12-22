@@ -1,0 +1,64 @@
+graph TD
+    %% Kelompok utama
+    subgraph Client[Frontend - Next.js (Browser)]
+        UI[Pages / Views]
+        APIWrap[Fetch Wrapper (api.ts)]
+        LocalStorage[(localStorage: abs_token, abs_user)]
+        UI --> APIWrap
+        UI --> LocalStorage
+    end
+
+    subgraph Backend[Backend - FastAPI Application]
+        Main[main.py (FastAPI App)]
+        subgraph Routers[Routers / API Layer]
+            Auth[/auth/*]
+            Users[/users/*]
+            Devices[/devices/*]
+            Jobs[/jobs/*]
+            Backups[/backups/*]
+            Schedules[/schedules/*]
+            Audit[/audit-logs/*]
+            Health[/health]
+        end
+        subgraph Services[Business Services]
+            Scheduler[APScheduler (scheduler.py)]
+            Netmiko[Netmiko Worker (netmiko_worker.py)]
+            JobQ[Job Queue (job_controller.py)]
+            AuditSvc[Audit Logger (audit_log.py)]
+            Retention[Retention (retention.py)]
+            Crypto[Crypto (crypto.py)]
+        end
+        Security[security.py (JWT & Password Hash)]
+        Schemas[schemas.py (Pydantic)]
+        Models[models.py (SQLAlchemy Models)]
+        Settings[settings.py]
+        Main --> Routers
+        Main --> Services
+        Main --> Security
+        Main --> Settings
+        Routers --> Schemas
+        Routers --> Services
+        Services --> Models
+        Security --> Models
+    end
+
+    subgraph Storage[Persistence]
+        DB[(SQLite Database)]
+        BackupFiles[(Backup Files .cfg)]
+    end
+
+    APIWrap -->|HTTP /api/... + Bearer| Nginx[Reverse Proxy / Gateway]
+    Nginx --> Main
+    Models --> DB
+    Netmiko --> BackupFiles
+
+    %% Scheduler & Job Flow
+    Scheduler -->|trigger interval| Jobs
+    Jobs --> JobQ
+    JobQ --> Netmiko
+    Netmiko --> BackupFiles
+    Netmiko --> Backups
+
+    %% Audit Logging
+    Services --> AuditSvc
+    AuditSvc --> Models

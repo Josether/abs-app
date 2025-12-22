@@ -1,0 +1,70 @@
+erDiagram
+    USER ||--o{ SCHEDULE : creates
+    USER ||--o{ JOB : executes
+    SCHEDULE ||--o{ JOB : triggers
+    DEVICE ||--o{ BACKUP : has
+    JOB ||--o{ BACKUP : generates
+    USER ||--o{ AUDIT : performs
+    
+    USER {
+        int id PK
+        string username UK
+        string password_hash
+        string role
+        datetime created_at
+    }
+    
+    SCHEDULE {
+        int id PK
+        string name UK
+        int interval_days
+        string run_at
+        string target_type
+        string target_tags
+        int retention
+        bool notify_on_fail
+        bool enabled
+    }
+
+    JOB {
+        int id PK
+        string triggered_by
+        string status
+        datetime started_at
+        datetime finished_at
+        int devices
+        string log
+    }
+
+    DEVICE {
+        int id PK
+        string hostname
+        string ip
+        string vendor
+        string protocol
+        int port
+        string username_enc
+        string password_enc
+        string secret_enc
+        string tags
+        bool enabled
+    }
+
+    BACKUP {
+        int id PK
+        int device_id FK
+        datetime timestamp
+        int size_bytes
+        string hash
+        string status
+        string path
+    }
+    
+    AUDIT {
+        int id PK
+        datetime timestamp
+        string user
+        string action
+        string target
+        string result
+    }

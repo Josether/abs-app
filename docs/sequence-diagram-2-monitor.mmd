@@ -1,0 +1,31 @@
+sequenceDiagram
+    actor Admin as Administrator
+    participant UI as Frontend UI
+    participant API as Backend API
+    participant DB as Database
+    
+    Admin->>UI: Buka menu Dashboard
+    UI->>API: Request data dashboard
+    API->>DB: Ambil statistik perangkat
+    API->>DB: Ambil ringkasan job
+    API->>DB: Ambil jumlah backup
+    DB-->>API: Return data agregat
+    API-->>UI: Return data summary
+    UI->>Admin: Tampilkan status perangkat, job, backup
+    
+    Admin->>UI: Pilih menu Audit Logs
+    UI->>API: Request daftar audit log
+    API->>DB: Ambil data audit terbaru
+    DB-->>API: Return audit logs
+    API-->>UI: Return daftar log
+    UI->>Admin: Tampilkan daftar log aktivitas
+    
+    Admin->>UI: Terapkan filter (tanggal/tipe/user)
+    UI->>API: Request log dengan filter
+    API->>DB: Ambil data audit terfilter
+    DB-->>API: Return filtered logs
+    API-->>UI: Return hasil filter
+    UI->>Admin: Tampilkan log terfilter
+    
+    Admin->>UI: Pilih detail log
+    UI->>Admin: Tampilkan detail log

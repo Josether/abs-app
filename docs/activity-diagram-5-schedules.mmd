@@ -1,0 +1,71 @@
+graph TB
+    subgraph Administrator
+        A1(( ))
+        A2[Membuka menu Schedules]
+        A3{Memilih aksi}
+        A4[Klik Create Schedule]
+        A5[Mengisi form jadwal]
+        A6[Klik Edit]
+        A7[Update jadwal]
+        A8[Klik Delete]
+        A9[Klik Enable/Disable]
+        A10(( ))
+    end
+    
+    subgraph Sistem
+        S1[Menampilkan daftar<br/>jadwal backup]
+        S2[Menampilkan form<br/>pembuatan jadwal]
+        S3[Simpan jadwal<br/>ke database]
+        S4[Daftarkan ke APScheduler<br/>dengan cron trigger]
+        S5[Catat audit log:<br/>schedule_create]
+        S6[Menampilkan form edit]
+        S7[Update jadwal<br/>di database]
+        S8[Update APScheduler job]
+        S9[Catat audit log:<br/>schedule_update]
+        S10[Hapus jadwal<br/>dari database]
+        S11[Remove dari APScheduler]
+        S12[Catat audit log:<br/>schedule_delete]
+        S13[Toggle status enabled<br/>di database]
+        S14[Pause/Resume<br/>APScheduler job]
+        S15[Catat audit log:<br/>schedule_toggle]
+    end
+    
+    %% Fase: Browse Schedules
+    A1 --> A2
+    A2 --> S1
+    S1 --> A3
+    
+    %% Fase: Create Schedule
+    A3 -->|Create| A4
+    A4 --> S2
+    S2 --> A5
+    A5 --> S3
+    S3 --> S4
+    S4 --> S5
+    S5 --> A10
+    
+    %% Fase: Edit Schedule
+    A3 -->|Edit| A6
+    A6 --> S6
+    S6 --> A7
+    A7 --> S7
+    S7 --> S8
+    S8 --> S9
+    S9 --> A10
+    
+    %% Fase: Delete Schedule
+    A3 -->|Delete| A8
+    A8 --> S10
+    S10 --> S11
+    S11 --> S12
+    S12 --> A10
+    
+    %% Fase: Toggle Schedule
+    A3 -->|Toggle| A9
+    A9 --> S13
+    S13 --> S14
+    S14 --> S15
+    S15 --> A10
+    
+    style A1 fill:#000
+    style A10 fill:#000

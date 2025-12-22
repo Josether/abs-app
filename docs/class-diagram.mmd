@@ -1,0 +1,97 @@
+classDiagram
+    %% ========== Domain Models ==========
+    class User {
+        +int id
+        +string username
+        +string password_hash
+        +string role
+        +datetime created_at
+    }
+
+    class Device {
+        +int id
+        +string hostname
+        +string ip
+        +string vendor
+        +string protocol
+        +string username_enc
+        +string password_enc
+        +bool enabled
+    }
+
+    class Job {
+        +int id
+        +string triggered_by
+        +string status
+        +datetime started_at
+        +datetime finished_at
+    }
+
+    class Backup {
+        +int id
+        +int device_id
+        +datetime timestamp
+        +string path
+        +string status
+    }
+
+    class Schedule {
+        +int id
+        +string name
+        +string run_at
+        +int interval_days
+        +bool enabled
+    }
+
+    class Audit {
+        +int id
+        +datetime timestamp
+        +string user
+        +string action
+        +string target
+        +string result
+    }
+
+    %% ========== Service Layer ==========
+    class AuthService {
+        +hash_password()
+        +verify_password()
+        +create_token()
+        +verify_token()
+    }
+
+    class CryptoService {
+        +encrypt()
+        +decrypt()
+    }
+
+    class BackupWorker {
+        +fetch_config()
+        +connect_device()
+    }
+
+    class SchedulerService {
+        +register_job()
+        +remove_job()
+        +toggle_job()
+    }
+
+    class AuditService {
+        +log_event()
+    }
+
+    %% ========== Relationships ==========
+    Device "1" --> "*" Backup : has
+    Schedule "1" --> "*" Job : triggers
+    
+    AuthService --> User : manages
+    CryptoService --> Device : encrypts
+    BackupWorker --> Device : connects
+    BackupWorker --> Backup : creates
+    SchedulerService --> Schedule : executes
+    SchedulerService --> Job : creates
+    AuditService --> Audit : logs
+    
+    note for Device "Credentials encrypted"
+    note for Schedule "Automated backup jobs"
+

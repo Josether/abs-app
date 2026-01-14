@@ -7,9 +7,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Eye, Download, Search } from 'lucide-react';
+import { Eye, Download, Search, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { apiGet, apiGetBlob, apiGetText } from '@/lib/api';
+import { apiGet, apiGetBlob, apiGetText, apiDelete } from '@/lib/api';
 
 interface Backup {
   id: number;
@@ -31,6 +31,9 @@ export function BackupsPage() {
   const [loading, setLoading] = useState(false);
   const [previewingId, setPreviewingId] = useState<number | null>(null);
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [backupToDelete, setBackupToDelete] = useState<Backup | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
   const fetchBackups = async () => {
     setLoading(true);
@@ -109,6 +112,29 @@ export function BackupsPage() {
       toast.error('Failed to download backup: ' + (msg || 'Unknown error'));
     } finally {
       setDownloadingId(null);
+    }
+  };
+
+  const handleDeleteClick = (backup: Backup) => {
+    setBackupToDelete(backup);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!backupToDelete) return;
+    
+    setDeletingId(backupToDelete.id);
+    try {
+      await apiDelete(`/backups/${backupToDelete.id}`);
+      toast.success('Backup deleted successfully');
+      setIsDeleteDialogOpen(false);
+      setBackupToDelete(null);
+      await fetchBackups();
+    } catch (err: unknown) {
+      const msg = (err && typeof err === 'object' && 'message' in err) ? (err as { message?: string }).message : String(err);
+      toast.error('Failed to delete backup: ' + (msg || 'Unknown error'));
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -229,6 +255,16 @@ export function BackupsPage() {
                       )}
                       {downloadingId === backup.id ? 'Downloading...' : 'Download'}
                     </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => handleDeleteClick(backup)}
+                      title="Delete"
+                      className="gap-1 text-red-600 hover:text-red-700 hover:bg-red-50"
+                      disabled={previewingId === backup.id || downloadingId === backup.id || deletingId === backup.id}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
                   </div>
                 </TableCell>
               </TableRow>
@@ -237,6 +273,56 @@ export function BackupsPage() {
         </Table>
         )}
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirm Delete</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-sm text-gray-600">
+              Are you sure you want to delete this backup?
+            </p>
+            {backupToDelete && (
+              <div className="mt-3 p-3 bg-gray-50 rounded-lg">
+                <p className="text-sm font-medium">{backupToDelete.device_name ?? backupToDelete.device_id}</p>
+                <p className="text-xs text-gray-500 mt-1">{backupToDelete.timestamp}</p>
+              </div>
+            )}
+            <p className="text-sm text-red-600 mt-3">
+              ⚠️ This action cannot be undone.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setIsDeleteDialogOpen(false)}
+              disabled={deletingId !== null}
+            >
+              Cancel
+            </Button>
+            <Button 
+              variant="destructive"
+              onClick={handleDeleteConfirm}
+              disabled={deletingId !== null}
+              className="gap-2"
+            >
+              {deletingId !== null ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-4 h-4" />
+                  Delete
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Preview Modal */}
       <Dialog open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
